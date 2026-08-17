@@ -35,16 +35,30 @@ export const demoHistory = [
     id: 'history-1', branch_id: 'demo-1', branch_name: branches[0], obz_percentage: 101.2,
     obz_points: 20, revenue_percentage: 96.5, revenue_points: 38.6,
     discount_band: 'A', discount_percentage: 10.8, discount_points: 35,
-    development_points: 5, total_points: 98.6, created_at: new Date().toISOString(),
+    development_points: 5, total_points: 98.6, evidence_count: 3, created_at: new Date().toISOString(),
   },
   {
     id: 'history-2', branch_id: 'demo-1', branch_name: branches[0], obz_percentage: 98,
     obz_points: 19.6, revenue_percentage: 90, revenue_points: 36,
     discount_band: 'A', discount_percentage: 11.2, discount_points: 35,
-    development_points: 3.33, total_points: 93.93,
+    development_points: 3.33, total_points: 93.93, evidence_count: 2,
     created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
   },
 ];
+
+const demoDocumentUrl = 'data:text/plain;charset=utf-8,Comprovante%20demonstrativo%20Eletroluz';
+
+export const demoEvidenceBySubmission = new Map([
+  ['history-1', [
+    { category: 'books', original_name: 'foto-livro.jpg', mime_type: 'image/jpeg', size_bytes: 842311, signed_url: demoDocumentUrl },
+    { category: 'courses', original_name: 'certificado-curso.pdf', mime_type: 'application/pdf', size_bytes: 1240900, signed_url: demoDocumentUrl },
+    { category: 'events', original_name: 'foto-evento.webp', mime_type: 'image/webp', size_bytes: 654210, signed_url: demoDocumentUrl },
+  ]],
+  ['history-2', [
+    { category: 'books', original_name: 'leitura-lideranca.png', mime_type: 'image/png', size_bytes: 721110, signed_url: demoDocumentUrl },
+    { category: 'certifications', original_name: 'certificacao.pdf', mime_type: 'application/pdf', size_bytes: 992112, signed_url: demoDocumentUrl },
+  ]],
+]);
 
 export const demoLatest = demoRanking
   .filter((entry) => entry.total_points !== null)

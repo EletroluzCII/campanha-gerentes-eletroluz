@@ -8,6 +8,7 @@ Sistema web para registrar os indicadores das 12 filiais, calcular a pontuação
 - Quatro indicadores com cálculo imediato e validação no banco.
 - Ranking compartilhado com destaque da filial conectada.
 - Histórico imutável de todos os lançamentos.
+- Comprovantes privados para livros, cursos, certificações e eventos.
 - Painel administrativo com métricas detalhadas, filtros e exportação CSV.
 - Alteração da própria senha.
 - Layout responsivo e acessível.
@@ -35,7 +36,9 @@ O modo de demonstração usa dados fictícios, não autentica e nunca é habilit
 ## Configuração do Supabase
 
 1. Crie um projeto vazio no Supabase.
-2. Abra o **SQL Editor** e execute todo o arquivo [`supabase/migrations/202608170001_initial.sql`](supabase/migrations/202608170001_initial.sql).
+2. Abra o **SQL Editor** e execute, nesta ordem:
+   - [`supabase/migrations/202608170001_initial.sql`](supabase/migrations/202608170001_initial.sql)
+   - [`supabase/migrations/202608170002_development_evidence.sql`](supabase/migrations/202608170002_development_evidence.sql)
 3. Copie `.env.example` para `.env`.
 4. Em **Project Settings > API**, preencha no `.env`:
    - `VITE_SUPABASE_URL`: URL do projeto.
@@ -104,7 +107,7 @@ public/
 - OBZ: 20 pontos, elegibilidade mínima de 95% e limite em 100%.
 - Faturamento: 40 pontos proporcionais, limitados em 100%.
 - Descontos: 35 pontos quando o percentual está dentro do teto da faixa.
-- Desenvolvimento pessoal: 5 pontos proporcionais até três iniciativas.
+- Desenvolvimento pessoal: 5 pontos proporcionais até três iniciativas comprovadas. Marcar uma atividade sem anexar o arquivo não concede pontos.
 
 O navegador mostra a prévia, mas a função `submit_metrics` recalcula tudo no PostgreSQL. Valores enviados manualmente pelo navegador não conseguem definir a própria pontuação.
 
@@ -115,6 +118,9 @@ O navegador mostra a prévia, mas a função `submit_metrics` recalcula tudo no 
 - O gerente lê apenas o próprio histórico; o ranking expõe somente o resumo de todas as filiais.
 - O administrador lê todos os lançamentos, sem poder alterá-los pela aplicação.
 - Não existem políticas de atualização ou exclusão para o histórico.
+- Comprovantes ficam no bucket privado `development-evidence`, limitado a JPG, PNG, WebP e PDF de até 10 MB.
+- Somente a filial proprietária e o administrador podem gerar links temporários para os comprovantes.
+- A função do banco confirma a existência de cada objeto antes de calcular os pontos de desenvolvimento.
 - A chave administrativa é usada apenas pelo script local de configuração.
 
 Para recuperar uma conta sem acesso, redefina a senha pelo painel administrativo do Supabase. Não exponha a chave `service_role` para criar uma recuperação dentro do GitHub Pages.

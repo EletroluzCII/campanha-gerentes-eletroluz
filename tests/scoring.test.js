@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateScore, validateMetrics } from '../src/scoring.js';
+import { calculateScore, validateEvidenceFile, validateMetrics } from '../src/scoring.js';
 
 const base = {
   obzPercentage: 100,
@@ -8,9 +8,13 @@ const base = {
   discountBand: 'A',
   discountPercentage: 11.4,
   developmentBooks: true,
+  developmentBooksEvidence: true,
   developmentCourses: true,
+  developmentCoursesEvidence: true,
   developmentCertifications: true,
+  developmentCertificationsEvidence: true,
   developmentEvents: false,
+  developmentEventsEvidence: false,
 };
 
 test('calcula a pontuação máxima em 100 pontos', () => {
@@ -54,7 +58,30 @@ test('desconto vazio não concede pontos antes do preenchimento', () => {
 
 test('desenvolvimento pontua proporcionalmente e limita em três iniciativas', () => {
   assert.equal(calculateScore({ ...base, developmentCourses: false, developmentCertifications: false }).developmentPoints, 1.67);
-  assert.equal(calculateScore({ ...base, developmentEvents: true }).developmentPoints, 5);
+  assert.equal(calculateScore({ ...base, developmentEvents: true, developmentEventsEvidence: true }).developmentPoints, 5);
+});
+
+test('iniciativa selecionada sem comprovante não pontua', () => {
+  const score = calculateScore({
+    ...base,
+    developmentBooksEvidence: false,
+    developmentCoursesEvidence: false,
+    developmentCertificationsEvidence: false,
+  });
+  assert.equal(score.developmentPoints, 0);
+  assert.equal(score.initiatives, 0);
+});
+
+test('validação exige comprovante para toda iniciativa selecionada', () => {
+  const errors = validateMetrics({ ...base, developmentBooksEvidence: false });
+  assert.equal(errors.developmentBooksEvidence, 'Anexe um comprovante do livro.');
+});
+
+test('validação de arquivo aceita formatos permitidos e limita tamanho', () => {
+  assert.equal(validateEvidenceFile({ type: 'application/pdf', size: 1024 }), '');
+  assert.match(validateEvidenceFile({ type: 'text/plain', size: 1024 }), /Formato não permitido/);
+  assert.match(validateEvidenceFile({ type: 'image/jpeg', size: 11 * 1024 * 1024 }), /no máximo 10 MB/);
+  assert.match(validateEvidenceFile({ type: 'image/png', size: 0 }), /vazio/);
 });
 
 test('validação rejeita campos vazios, negativos e fora do limite', () => {

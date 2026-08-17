@@ -10,6 +10,11 @@ export const DISCOUNT_LIMITS = Object.freeze({
   B: 19.52,
 });
 
+export const EVIDENCE_RULES = Object.freeze({
+  maxSizeBytes: 10 * 1024 * 1024,
+  acceptedTypes: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
+});
+
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
 export function calculateScore(values) {
@@ -18,10 +23,10 @@ export function calculateScore(values) {
   const discountPercentage = Number(values.discountPercentage || 0);
   const discountBand = values.discountBand === 'B' ? 'B' : 'A';
   const initiatives = [
-    values.developmentBooks,
-    values.developmentCourses,
-    values.developmentCertifications,
-    values.developmentEvents,
+    values.developmentBooks && values.developmentBooksEvidence,
+    values.developmentCourses && values.developmentCoursesEvidence,
+    values.developmentCertifications && values.developmentCertificationsEvidence,
+    values.developmentEvents && values.developmentEventsEvidence,
   ].filter(Boolean).length;
 
   const obzPoints = obzPercentage < 95
@@ -79,5 +84,26 @@ export function validateMetrics(values) {
     errors.discountBand = 'Selecione uma faixa válida.';
   }
 
+  [
+    ['developmentBooks', 'developmentBooksEvidence', 'Anexe um comprovante do livro.'],
+    ['developmentCourses', 'developmentCoursesEvidence', 'Anexe um comprovante do curso.'],
+    ['developmentCertifications', 'developmentCertificationsEvidence', 'Anexe a certificação.'],
+    ['developmentEvents', 'developmentEventsEvidence', 'Anexe um comprovante do evento.'],
+  ].forEach(([selectedField, evidenceField, message]) => {
+    if (values[selectedField] && !values[evidenceField]) errors[evidenceField] = message;
+  });
+
   return errors;
+}
+
+export function validateEvidenceFile(file) {
+  if (!file) return 'Selecione um comprovante.';
+  if (!EVIDENCE_RULES.acceptedTypes.includes(file.type)) {
+    return 'Formato não permitido. Use JPG, PNG, WebP ou PDF.';
+  }
+  if (file.size > EVIDENCE_RULES.maxSizeBytes) {
+    return 'O arquivo deve ter no máximo 10 MB.';
+  }
+  if (file.size <= 0) return 'O arquivo está vazio.';
+  return '';
 }

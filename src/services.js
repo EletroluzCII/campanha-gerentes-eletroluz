@@ -1,4 +1,10 @@
-import { demoHistory, demoLatest, demoProfile, demoRanking } from './demo-data.js';
+import {
+  demoEvidenceBySubmission,
+  demoHistory,
+  demoLatest,
+  demoProfile,
+  demoRanking,
+} from './demo-data.js';
 import { calculateScore } from './scoring.js';
 import { hasSupabaseConfig, supabase, usernameToEmail } from './supabase.js';
 
@@ -9,7 +15,22 @@ export const isDemo = isLocalhost && ['manager', 'admin'].includes(demoRole);
 const flattenSubmission = (row) => ({
   ...row,
   branch_name: row.branch_name || row.branches?.name || '',
+  evidence_count: row.evidence_count ?? row.submission_evidence?.length ?? 0,
 });
+
+const evidenceFields = [
+  ['books', 'developmentBooks'],
+  ['courses', 'developmentCourses'],
+  ['certifications', 'developmentCertifications'],
+  ['events', 'developmentEvents'],
+];
+
+const extensionByType = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'application/pdf': 'pdf',
+};
 
 const assertNoError = ({ data, error }) => {
   if (error) throw error;
@@ -74,7 +95,7 @@ export const appService = {
 
     let query = supabase
       .from('metric_submissions')
-      .select('*, branches(name)')
+      .select('*, branches(name), submission_evidence(id, category)')
       .order('created_at', { ascending: false });
     if (filters.branchId) query = query.eq('branch_id', filters.branchId);
     if (filters.dateFrom) query = query.gte('created_at', `${filters.dateFrom}T00:00:00-03:00`);
@@ -88,6 +109,28 @@ export const appService = {
     return assertNoError(await supabase.rpc('get_admin_latest_metrics'));
   },
 
+  async getEvidence(submissionId) {
+    if (isDemo) {
+      const adminMatch = submissionId.match(/^admin-history-(\d+)$/);
+      const sourceId = adminMatch
+        ? demoHistory[Number(adminMatch[1]) % demoHistory.length].id
+        : submissionId;
+      return structuredClone(demoEvidenceBySubmission.get(sourceId) || []);
+    }
+    const items = assertNoError(await supabase
+      .from('submission_evidence')
+      .select('id, category, storage_path, original_name, mime_type, size_bytes, created_at')
+      .eq('submission_id', submissionId)
+      .order('category'));
+
+    return Promise.all(items.map(async (item) => {
+      const { data, error } = await supabase.storage
+        .from('development-evidence')
+        .createSignedUrl(item.storage_path, 120);
+      return { ...item, signed_url: error ? null : data.signedUrl };
+    }));
+  },
+
   async getBranches() {
     if (isDemo) return demoRanking.map((row) => ({ id: row.branch_id, name: row.branch_name }));
     return assertNoError(await supabase
@@ -97,12 +140,24 @@ export const appService = {
       .order('display_order'));
   },
 
-  async submitMetrics(values) {
+  async submitMetrics(values, evidenceFiles = {}, onProgress = () => {}) {
     const score = calculateScore(values);
     if (isDemo) {
       const now = new Date().toISOString();
+      const submissionId = `demo-${Date.now()}`;
+      const evidence = evidenceFields
+        .filter(([, field]) => values[field] && evidenceFiles[field])
+        .map(([category, field]) => ({
+          category,
+          original_name: evidenceFiles[field].name,
+          mime_type: evidenceFiles[field].type,
+          size_bytes: evidenceFiles[field].size,
+          signed_url: URL.createObjectURL(evidenceFiles[field]),
+        }));
+      demoEvidenceBySubmission.set(submissionId, evidence);
+      onProgress({ completed: evidence.length, total: evidence.length, stage: 'saving' });
       demoHistory.unshift({
-        id: `demo-${Date.now()}`,
+        id: submissionId,
         branch_id: 'demo-1',
         branch_name: demoProfile('manager').display_name,
         obz_percentage: Number(values.obzPercentage),
@@ -118,22 +173,64 @@ export const appService = {
         development_events: values.developmentEvents,
         development_points: score.developmentPoints,
         total_points: score.totalPoints,
+        evidence_count: evidence.length,
         created_at: now,
       });
       demoRanking[0].total_points = score.totalPoints;
       demoRanking[0].updated_at = now;
-      return { id: demoHistory[0].id, ...score };
+      return { id: submissionId, ...score };
     }
 
-    return assertNoError(await supabase.rpc('submit_metrics', {
-      p_obz_percentage: Number(values.obzPercentage),
-      p_revenue_percentage: Number(values.revenuePercentage),
-      p_discount_band: values.discountBand,
-      p_discount_percentage: Number(values.discountPercentage),
-      p_development_books: Boolean(values.developmentBooks),
-      p_development_courses: Boolean(values.developmentCourses),
-      p_development_certifications: Boolean(values.developmentCertifications),
-      p_development_events: Boolean(values.developmentEvents),
-    }));
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) throw userError || new Error('Sessão expirada.');
+
+    const selectedEvidence = evidenceFields
+      .filter(([, field]) => values[field] && evidenceFiles[field])
+      .map(([category, field]) => ({ category, field, file: evidenceFiles[field] }));
+    const batchId = crypto.randomUUID();
+    const uploadedPaths = [];
+    const evidencePayload = [];
+
+    try {
+      for (let index = 0; index < selectedEvidence.length; index += 1) {
+        const { category, file } = selectedEvidence[index];
+        const extension = extensionByType[file.type];
+        const path = `${userData.user.id}/${batchId}/${category}/${crypto.randomUUID()}.${extension}`;
+        onProgress({ completed: index, total: selectedEvidence.length, stage: 'uploading' });
+        const { error } = await supabase.storage.from('development-evidence').upload(path, file, {
+          cacheControl: '3600',
+          contentType: file.type,
+          upsert: false,
+        });
+        if (error) throw error;
+        uploadedPaths.push(path);
+        evidencePayload.push({
+          category,
+          storage_path: path,
+          original_name: file.name,
+          mime_type: file.type,
+          size_bytes: file.size,
+        });
+        onProgress({ completed: index + 1, total: selectedEvidence.length, stage: 'uploading' });
+      }
+
+      onProgress({ completed: selectedEvidence.length, total: selectedEvidence.length, stage: 'saving' });
+      return assertNoError(await supabase.rpc('submit_metrics', {
+        p_obz_percentage: Number(values.obzPercentage),
+        p_revenue_percentage: Number(values.revenuePercentage),
+        p_discount_band: values.discountBand,
+        p_discount_percentage: Number(values.discountPercentage),
+        p_development_books: Boolean(values.developmentBooks),
+        p_development_courses: Boolean(values.developmentCourses),
+        p_development_certifications: Boolean(values.developmentCertifications),
+        p_development_events: Boolean(values.developmentEvents),
+        p_evidence: evidencePayload,
+      }));
+    } catch (error) {
+      if (uploadedPaths.length) {
+        await supabase.storage.from('development-evidence').remove(uploadedPaths);
+      }
+      throw error;
+    }
   },
 };

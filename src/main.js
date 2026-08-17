@@ -1,6 +1,12 @@
 import './styles.css';
 import { icon } from './icons.js';
-import { calculateScore, DISCOUNT_LIMITS, validateMetrics } from './scoring.js';
+import {
+  calculateScore,
+  DISCOUNT_LIMITS,
+  EVIDENCE_RULES,
+  validateEvidenceFile,
+  validateMetrics,
+} from './scoring.js';
 import { appService } from './services.js';
 import {
   downloadCsv,
@@ -13,16 +19,31 @@ import {
 
 const app = document.querySelector('#app');
 
+const DEVELOPMENT_ITEMS = Object.freeze([
+  { field: 'developmentBooks', evidenceField: 'developmentBooksEvidence', category: 'books', emoji: '📚', title: 'Livros', description: 'Foto do livro ou registro da leitura' },
+  { field: 'developmentCourses', evidenceField: 'developmentCoursesEvidence', category: 'courses', emoji: '🎓', title: 'Cursos', description: 'Certificado, declaração ou registro do curso' },
+  { field: 'developmentCertifications', evidenceField: 'developmentCertificationsEvidence', category: 'certifications', emoji: '🏅', title: 'Certificações', description: 'Arquivo ou imagem da certificação' },
+  { field: 'developmentEvents', evidenceField: 'developmentEventsEvidence', category: 'events', emoji: '🎤', title: 'Eventos', description: 'Foto, ingresso ou comprovante de participação' },
+]);
+
 const emptyMetrics = () => ({
   obzPercentage: '',
   revenuePercentage: '',
   discountBand: 'A',
   discountPercentage: '',
   developmentBooks: false,
+  developmentBooksEvidence: false,
   developmentCourses: false,
+  developmentCoursesEvidence: false,
   developmentCertifications: false,
+  developmentCertificationsEvidence: false,
   developmentEvents: false,
+  developmentEventsEvidence: false,
 });
+
+const emptyEvidenceFiles = () => Object.fromEntries(
+  DEVELOPMENT_ITEMS.map((item) => [item.field, null]),
+);
 
 const state = {
   profile: null,
@@ -32,14 +53,29 @@ const state = {
   adminLatest: [],
   branches: [],
   metrics: emptyMetrics(),
+  evidenceFiles: emptyEvidenceFiles(),
   errors: {},
   loading: false,
   modalOpen: false,
+  evidenceModal: null,
+  submitting: false,
   toast: null,
   historyFilters: { branchId: '', dateFrom: '', dateTo: '' },
 };
 
 const roleLabel = () => state.profile?.role === 'admin' ? 'Administrador' : 'Gerente de filial';
+
+const formatFileSize = (bytes) => {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`;
+};
+
+const evidenceCategoryLabel = (category) => {
+  const item = DEVELOPMENT_ITEMS.find((entry) => entry.category === category);
+  return item
+    ? `<span aria-hidden="true">${item.emoji}</span> ${escapeHtml(item.title)}`
+    : escapeHtml(category);
+};
 
 function renderBoot() {
   app.innerHTML = `
@@ -199,7 +235,7 @@ function scoreBadge(points, max, status = '') {
 }
 
 function fieldError(name) {
-  return `<span class="field-error" id="${name}-error">${escapeHtml(state.errors[name] || '')}</span>`;
+  return `<span class="field-error" id="${name}-error" role="alert">${escapeHtml(state.errors[name] || '')}</span>`;
 }
 
 function renderMetricsForm() {
@@ -235,14 +271,11 @@ function renderMetricsForm() {
         </article>
         <article class="metric-card">
           <div class="metric-head"><span class="metric-icon">${icon('book', 22)}</span><div><span>Indicador 4</span><h3>Desenvolvimento pessoal</h3></div><span class="weight">5%</span></div>
-          <p>Marque as iniciativas concluídas. A meta é completar três.</p>
+          <p>Marque as iniciativas e anexe um comprovante para cada uma. A meta é completar três.</p>
           <fieldset class="check-grid"><legend class="sr-only">Iniciativas concluídas</legend>
-            ${developmentCheck('developmentBooks', 'Livros', 'Leituras de negócios e liderança')}
-            ${developmentCheck('developmentCourses', 'Cursos', 'Cursos, workshops e treinamentos')}
-            ${developmentCheck('developmentCertifications', 'Certificações', 'Certificações reconhecidas')}
-            ${developmentCheck('developmentEvents', 'Eventos', 'Palestras e congressos')}
+            ${DEVELOPMENT_ITEMS.map(developmentCheck).join('')}
           </fieldset>
-          <div id="development-score">${scoreBadge(score.developmentPoints, 5, `${score.initiatives} de 3 iniciativas`)}</div>
+          <div id="development-score">${scoreBadge(score.developmentPoints, 5, `${score.initiatives} de 3 comprovadas`)}</div>
         </article>
       </div>
       <div class="form-submit-bar"><div><span>Pontuação prevista</span><strong id="submit-total">${formatPoints(score.totalPoints)} <small>/ 100 pts</small></strong></div><button class="button button-primary" type="submit">${icon('save', 18)} Revisar e salvar</button></div>
@@ -250,8 +283,22 @@ function renderMetricsForm() {
   </section>`;
 }
 
-function developmentCheck(name, title, description) {
-  return `<label class="check-option"><input type="checkbox" name="${name}" ${state.metrics[name] ? 'checked' : ''} /><span class="custom-check">${icon('check', 15)}</span><span><strong>${title}</strong><small>${description}</small></span></label>`;
+function developmentCheck(item) {
+  const selected = state.metrics[item.field];
+  const file = state.evidenceFiles[item.field];
+  const inputId = `evidence-${item.category}`;
+  const accept = EVIDENCE_RULES.acceptedTypes.join(',');
+  return `<div class="development-option ${selected ? 'is-selected' : ''} ${file ? 'has-file' : ''}">
+    <label class="check-option"><input type="checkbox" name="${item.field}" ${selected ? 'checked' : ''} /><span class="custom-check">${icon('check', 15)}</span><span><strong><span class="development-emoji" aria-hidden="true">${item.emoji}</span> ${item.title}</strong><small>${item.description}</small></span></label>
+    ${selected ? `<div class="evidence-upload">
+      <div class="evidence-heading"><span>Comprovante obrigatório</span><small>${file ? 'Arquivo pronto para envio' : 'Ainda não anexado'}</small></div>
+      <input class="evidence-input" type="file" id="${inputId}" data-evidence-for="${item.field}" accept="${accept}" aria-describedby="${item.evidenceField}-help ${item.evidenceField}-error" />
+      <label class="evidence-picker" for="${inputId}">${icon('download', 17)} ${file ? 'Substituir arquivo' : 'Selecionar arquivo'}</label>
+      <small id="${item.evidenceField}-help" class="evidence-help">JPG, PNG, WebP ou PDF · máximo 10 MB</small>
+      ${file ? `<div class="selected-file"><span class="file-mark">${file.type === 'application/pdf' ? 'PDF' : 'IMG'}</span><span><strong>${escapeHtml(file.name)}</strong><small>${formatFileSize(file.size)}</small></span><button type="button" class="icon-button remove-file" data-action="remove-evidence" data-evidence-for="${item.field}" aria-label="Remover comprovante de ${item.title}">${icon('close', 18)}</button></div>` : ''}
+      ${fieldError(item.evidenceField)}
+    </div>` : ''}
+  </div>`;
 }
 
 function rankMedal(position) {
@@ -308,7 +355,10 @@ function renderHistory(content) {
 
 function renderHistoryTable() {
   if (!state.history.length) return renderEmpty('history', 'Nenhum lançamento encontrado', 'Quando houver envios dentro do filtro escolhido, eles aparecerão aqui.');
-  return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr>${state.profile.role === 'admin' ? '<th>Filial</th>' : ''}<th>Data</th><th>OBZ</th><th>Faturamento</th><th>Desconto</th><th>Desenvolvimento</th><th>Total</th></tr></thead><tbody>${state.history.map((row) => `<tr>${state.profile.role === 'admin' ? `<td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td>` : ''}<td data-label="Data">${formatDate(row.created_at)}</td><td data-label="OBZ">${formatPercentage(row.obz_percentage)} <small>${formatPoints(row.obz_points)} pts</small></td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)} <small>${formatPoints(row.revenue_points)} pts</small></td><td data-label="Desconto">${formatPercentage(row.discount_percentage)} <small>${formatPoints(row.discount_points)} pts</small></td><td data-label="Desenvolvimento">${formatPoints(row.development_points)} pts</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong></td></tr>`).join('')}</tbody></table></div></div>`;
+  return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr>${state.profile.role === 'admin' ? '<th>Filial</th>' : ''}<th>Data</th><th>OBZ</th><th>Faturamento</th><th>Desconto</th><th>Desenvolvimento</th><th>Comprovantes</th><th>Total</th></tr></thead><tbody>${state.history.map((row) => {
+    const evidenceCount = Number(row.evidence_count || 0);
+    return `<tr>${state.profile.role === 'admin' ? `<td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td>` : ''}<td data-label="Data">${formatDate(row.created_at)}</td><td data-label="OBZ">${formatPercentage(row.obz_percentage)} <small>${formatPoints(row.obz_points)} pts</small></td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)} <small>${formatPoints(row.revenue_points)} pts</small></td><td data-label="Desconto">${formatPercentage(row.discount_percentage)} <small>${formatPoints(row.discount_points)} pts</small></td><td data-label="Desenvolvimento">${formatPoints(row.development_points)} pts</td><td data-label="Comprovantes">${evidenceCount ? `<button type="button" class="button button-table" data-action="view-evidence" data-submission-id="${row.id}">${icon('eye', 16)} Ver ${evidenceCount}</button>` : '<span class="muted-text">Nenhum</span>'}</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong></td></tr>`;
+  }).join('')}</tbody></table></div></div>`;
 }
 
 function renderPassword(content) {
@@ -330,12 +380,25 @@ function renderEmpty(iconName, title, description) {
 function renderConfirmModal() {
   const root = document.querySelector('#modal-root');
   if (!root) return;
+  if (state.evidenceModal) {
+    const modal = state.evidenceModal;
+    const body = modal.loading
+      ? '<div class="evidence-modal-loading"><div class="spinner"></div><span>Carregando comprovantes...</span></div>'
+      : modal.error
+        ? `<div class="empty-state compact">${icon('alert', 26)}<strong>Não foi possível abrir</strong><p>${escapeHtml(modal.error)}</p></div>`
+        : modal.items.length
+          ? `<div class="evidence-list">${modal.items.map((item) => `<article class="evidence-list-item"><span class="file-mark">${item.mime_type === 'application/pdf' ? 'PDF' : 'IMG'}</span><div><strong>${evidenceCategoryLabel(item.category)}</strong><span>${escapeHtml(item.original_name)}</span><small>${formatFileSize(item.size_bytes)}</small></div>${item.signed_url ? `<a class="button button-secondary" href="${escapeHtml(item.signed_url)}" target="_blank" rel="noopener noreferrer">${icon('eye', 16)} Abrir</a>` : '<span class="file-unavailable">Indisponível</span>'}</article>`).join('')}</div>`
+          : renderEmpty('history', 'Nenhum comprovante', 'Este lançamento não possui arquivos vinculados.');
+    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal evidence-modal" role="dialog" aria-modal="true" aria-labelledby="evidence-modal-title" data-modal-panel><button class="icon-button modal-close" data-action="close-modal" aria-label="Fechar">${icon('close', 20)}</button><div class="modal-icon">${icon('eye', 25)}</div><h2 id="evidence-modal-title">Comprovantes do lançamento</h2><p>Arquivos privados disponíveis somente para a filial proprietária e o administrador.</p>${body}<div class="modal-actions"><button class="button button-secondary" data-action="close-modal">Fechar</button></div></section></div>`;
+    setTimeout(() => root.querySelector('[data-action="close-modal"]')?.focus(), 0);
+    return;
+  }
   if (!state.modalOpen) {
     root.innerHTML = '';
     return;
   }
   const score = calculateScore(state.metrics);
-  root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel><button class="icon-button modal-close" data-action="close-modal" aria-label="Fechar">${icon('close', 20)}</button><div class="modal-icon">${icon('save', 25)}</div><h2 id="modal-title">Confirmar lançamento</h2><p>Revise a pontuação antes de registrar. Este envio ficará preservado no histórico.</p><div class="review-list"><span>OBZ <strong>${formatPoints(score.obzPoints)} / 20</strong></span><span>Faturamento <strong>${formatPoints(score.revenuePoints)} / 40</strong></span><span>Descontos <strong>${formatPoints(score.discountPoints)} / 35</strong></span><span>Desenvolvimento <strong>${formatPoints(score.developmentPoints)} / 5</strong></span><span class="review-total">Pontuação total <strong>${formatPoints(score.totalPoints)} / 100</strong></span></div><div class="modal-actions"><button class="button button-secondary" data-action="close-modal">Voltar e revisar</button><button class="button button-primary" data-action="confirm-submit">Confirmar envio</button></div></section></div>`;
+  root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel><button class="icon-button modal-close" data-action="close-modal" aria-label="Fechar">${icon('close', 20)}</button><div class="modal-icon">${icon('save', 25)}</div><h2 id="modal-title">Confirmar lançamento</h2><p>Revise a pontuação antes de registrar. Este envio e seus comprovantes ficarão preservados no histórico.</p><div class="review-list"><span>OBZ <strong>${formatPoints(score.obzPoints)} / 20</strong></span><span>Faturamento <strong>${formatPoints(score.revenuePoints)} / 40</strong></span><span>Descontos <strong>${formatPoints(score.discountPoints)} / 35</strong></span><span>Desenvolvimento <strong>${formatPoints(score.developmentPoints)} / 5</strong></span><span>Comprovantes <strong>${score.initiatives} arquivo${score.initiatives === 1 ? '' : 's'}</strong></span><span class="review-total">Pontuação total <strong>${formatPoints(score.totalPoints)} / 100</strong></span></div><div class="upload-progress" id="upload-progress" role="status"></div><div class="modal-actions"><button class="button button-secondary" data-action="close-modal">Voltar e revisar</button><button class="button button-primary" data-action="confirm-submit">Confirmar envio</button></div></section></div>`;
   setTimeout(() => root.querySelector('[data-action="confirm-submit"]')?.focus(), 0);
 }
 
@@ -375,7 +438,7 @@ function updateMetricPreview() {
     ? 'Aguardando valor'
     : Number(state.metrics.discountPercentage) <= DISCOUNT_LIMITS[state.metrics.discountBand] ? 'Dentro do teto' : 'Acima do teto';
   set('#discount-score', scoreBadge(score.discountPoints, 35, discountStatus));
-  set('#development-score', scoreBadge(score.developmentPoints, 5, `${score.initiatives} de 3 iniciativas`));
+  set('#development-score', scoreBadge(score.developmentPoints, 5, `${score.initiatives} de 3 comprovadas`));
   set('#discount-limit', `Teto atual: ${formatPercentage(DISCOUNT_LIMITS[state.metrics.discountBand])}`);
 }
 
@@ -390,6 +453,23 @@ function syncMetricState(target) {
   updateMetricPreview();
 }
 
+function handleEvidenceSelection(target) {
+  const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === target.dataset.evidenceFor);
+  if (!item) return;
+  const file = target.files?.[0] || null;
+  const error = validateEvidenceFile(file);
+  if (error) {
+    state.evidenceFiles[item.field] = null;
+    state.metrics[item.evidenceField] = false;
+    state.errors[item.evidenceField] = error;
+  } else {
+    state.evidenceFiles[item.field] = file;
+    state.metrics[item.evidenceField] = true;
+    delete state.errors[item.evidenceField];
+  }
+  renderCurrentView();
+}
+
 function validatePassword(password, confirmation) {
   if (password.length < 12) return 'A senha deve ter pelo menos 12 caracteres.';
   if (!/[A-Za-z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) return 'Inclua letras, número e símbolo na senha.';
@@ -402,7 +482,22 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('change', (event) => {
-  if (event.target.closest('#metrics-form')) syncMetricState(event.target);
+  if (event.target.matches('[data-evidence-for]')) {
+    handleEvidenceSelection(event.target);
+    return;
+  }
+  if (event.target.closest('#metrics-form')) {
+    syncMetricState(event.target);
+    if (event.target.type === 'checkbox') {
+      const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === event.target.name);
+      if (item) {
+        if (!event.target.checked) state.evidenceFiles[item.field] = null;
+        state.metrics[item.evidenceField] = Boolean(event.target.checked && state.evidenceFiles[item.field]);
+        if (!event.target.checked) delete state.errors[item.evidenceField];
+        renderCurrentView();
+      }
+    }
+  }
 });
 
 document.addEventListener('submit', async (event) => {
@@ -432,7 +527,9 @@ document.addEventListener('submit', async (event) => {
         const node = document.querySelector(`#${field}-error`);
         if (node) node.textContent = message;
       });
-      document.querySelector(`#${Object.keys(state.errors)[0]}`)?.focus();
+      const firstField = Object.keys(state.errors)[0];
+      const evidenceItem = DEVELOPMENT_ITEMS.find((item) => item.evidenceField === firstField);
+      document.querySelector(evidenceItem ? `#evidence-${evidenceItem.category}` : `#${firstField}`)?.focus();
       showToast('Revise os campos destacados antes de continuar.', 'error');
       return;
     }
@@ -506,22 +603,62 @@ document.addEventListener('click', async (event) => {
     await appService.logout();
     state.profile = null;
     state.view = 'dashboard';
+    state.metrics = emptyMetrics();
+    state.evidenceFiles = emptyEvidenceFiles();
+    state.errors = {};
     renderLogin();
   }
+  if (action === 'remove-evidence') {
+    const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === button.dataset.evidenceFor);
+    if (item) {
+      state.evidenceFiles[item.field] = null;
+      state.metrics[item.evidenceField] = false;
+      state.errors[item.evidenceField] = 'Anexe um comprovante para esta iniciativa.';
+      renderCurrentView();
+    }
+  }
   if (action === 'close-modal' && !event.target.closest('[data-modal-panel]')) {
+    if (state.submitting) return;
     state.modalOpen = false;
+    state.evidenceModal = null;
     renderConfirmModal();
   } else if (action === 'close-modal' && button.matches('[data-action="close-modal"]')) {
+    if (state.submitting) return;
     state.modalOpen = false;
+    state.evidenceModal = null;
+    renderConfirmModal();
+  }
+  if (action === 'view-evidence') {
+    state.modalOpen = false;
+    state.evidenceModal = { loading: true, error: '', items: [], submissionId: button.dataset.submissionId };
+    renderConfirmModal();
+    try {
+      state.evidenceModal.items = await appService.getEvidence(button.dataset.submissionId);
+      state.evidenceModal.loading = false;
+    } catch {
+      state.evidenceModal.loading = false;
+      state.evidenceModal.error = 'Tente novamente em alguns instantes.';
+    }
     renderConfirmModal();
   }
   if (action === 'confirm-submit') {
+    state.submitting = true;
     button.disabled = true;
-    button.textContent = 'Salvando...';
+    button.textContent = 'Enviando...';
+    document.querySelectorAll('#modal-root button').forEach((modalButton) => { modalButton.disabled = true; });
     try {
-      await appService.submitMetrics(state.metrics);
+      await appService.submitMetrics(state.metrics, state.evidenceFiles, ({ completed, total, stage }) => {
+        const progress = document.querySelector('#upload-progress');
+        if (!progress) return;
+        progress.classList.add('is-visible');
+        progress.textContent = stage === 'saving'
+          ? total > 0 ? 'Comprovantes enviados. Registrando o lançamento...' : 'Registrando o lançamento...'
+          : `Enviando comprovantes: ${completed} de ${total}`;
+      });
       state.modalOpen = false;
       state.metrics = emptyMetrics();
+      state.evidenceFiles = emptyEvidenceFiles();
+      state.errors = {};
       await loadDashboardData();
       await loadHistoryData();
       renderCurrentView();
@@ -530,7 +667,10 @@ document.addEventListener('click', async (event) => {
     } catch {
       button.disabled = false;
       button.textContent = 'Confirmar envio';
-      showToast('Não foi possível salvar. Seus valores continuam na tela.', 'error');
+      document.querySelectorAll('#modal-root button').forEach((modalButton) => { modalButton.disabled = false; });
+      showToast('Não foi possível enviar os comprovantes. Seus valores continuam na tela.', 'error');
+    } finally {
+      state.submitting = false;
     }
   }
   if (action === 'refresh-ranking' || action === 'refresh-admin') {
@@ -567,6 +707,7 @@ document.addEventListener('click', async (event) => {
       Desconto_percentual: row.discount_percentage,
       Desconto_pontos: row.discount_points,
       Desenvolvimento_pontos: row.development_points,
+      Comprovantes: row.evidence_count || 0,
       Total: row.total_points,
     })), 'historico-campanha-eletroluz.csv');
   }
