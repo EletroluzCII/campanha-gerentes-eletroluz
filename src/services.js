@@ -32,6 +32,8 @@ const extensionByType = {
   'application/pdf': 'pdf',
 };
 
+const EVIDENCE_BUCKET = 'campaign-gerentes-2026-evidence';
+
 const assertNoError = ({ data, error }) => {
   if (error) throw error;
   return data;
@@ -125,7 +127,7 @@ export const appService = {
 
     return Promise.all(items.map(async (item) => {
       const { data, error } = await supabase.storage
-        .from('development-evidence')
+        .from(EVIDENCE_BUCKET)
         .createSignedUrl(item.storage_path, 120);
       return { ...item, signed_url: error ? null : data.signedUrl };
     }));
@@ -197,7 +199,7 @@ export const appService = {
         const extension = extensionByType[file.type];
         const path = `${userData.user.id}/${batchId}/${category}/${crypto.randomUUID()}.${extension}`;
         onProgress({ completed: index, total: selectedEvidence.length, stage: 'uploading' });
-        const { error } = await supabase.storage.from('development-evidence').upload(path, file, {
+        const { error } = await supabase.storage.from(EVIDENCE_BUCKET).upload(path, file, {
           cacheControl: '3600',
           contentType: file.type,
           upsert: false,
@@ -228,7 +230,7 @@ export const appService = {
       }));
     } catch (error) {
       if (uploadedPaths.length) {
-        await supabase.storage.from('development-evidence').remove(uploadedPaths);
+        await supabase.storage.from(EVIDENCE_BUCKET).remove(uploadedPaths);
       }
       throw error;
     }

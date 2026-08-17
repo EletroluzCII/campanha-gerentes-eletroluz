@@ -50,6 +50,7 @@ if (credentials.length !== 13) {
 }
 
 const client = createClient(supabaseUrl, serviceRoleKey, {
+  db: { schema: 'campaign_gerentes_2026' },
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
@@ -63,7 +64,7 @@ for (const credential of credentials) {
   const branch = isAdmin ? null : branches.find((item) => item.slug === credential.username);
   if (!isAdmin && !branch) throw new Error(`Filial não encontrada para ${credential.username}.`);
 
-  const email = `${credential.username}@campanha.eletroluz.local`;
+  const email = `${credential.username}@campanha-gerentes-2026.eletroluz.local`;
   let user = await findUserByEmail(client, email);
 
   if (!user) {
@@ -72,9 +73,12 @@ for (const credential of credentials) {
       password: credential.password,
       email_confirm: true,
       user_metadata: { username: credential.username },
+      app_metadata: { campaign_id: 'gerentes_2026' },
     });
     if (error) throw error;
     user = data.user;
+  } else if (user.app_metadata?.campaign_id !== 'gerentes_2026') {
+    throw new Error(`A conta ${credential.username} já existe sem o identificador seguro da campanha.`);
   }
 
   const { error: profileError } = await client.from('profiles').upsert({

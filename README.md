@@ -35,18 +35,19 @@ O modo de demonstração usa dados fictícios, não autentica e nunca é habilit
 
 ## Configuração do Supabase
 
-1. Crie um projeto vazio no Supabase.
+1. Selecione o projeto Supabase que receberá a campanha. As migrations usam o schema isolado `campaign_gerentes_2026` e não alteram tabelas existentes no schema `public`.
 2. Abra o **SQL Editor** e execute, nesta ordem:
    - [`supabase/migrations/202608170001_initial.sql`](supabase/migrations/202608170001_initial.sql)
    - [`supabase/migrations/202608170002_development_evidence.sql`](supabase/migrations/202608170002_development_evidence.sql)
-3. Copie `.env.example` para `.env`.
-4. Em **Project Settings > API**, preencha no `.env`:
+3. Em **Project Settings > API > Exposed schemas**, acrescente `campaign_gerentes_2026` sem remover os schemas existentes.
+4. Copie `.env.example` para `.env`.
+5. Em **Project Settings > API**, preencha no `.env`:
    - `VITE_SUPABASE_URL`: URL do projeto.
    - `VITE_SUPABASE_ANON_KEY`: chave pública `anon`/`publishable`.
    - `SUPABASE_URL`: a mesma URL, usada pelo script local.
    - `SUPABASE_SERVICE_ROLE_KEY`: chave `service_role`, usada somente localmente.
-5. Confirme que `ACESSOS_INICIAIS.txt` existe na raiz. Ele já está no `.gitignore`.
-6. Crie as 13 contas e associe os perfis:
+6. Confirme que `ACESSOS_INICIAIS.txt` existe na raiz. Ele já está no `.gitignore`.
+7. Crie as 13 contas e associe os perfis:
 
 ```powershell
 npm run create-users
@@ -118,9 +119,10 @@ O navegador mostra a prévia, mas a função `submit_metrics` recalcula tudo no 
 - O gerente lê apenas o próprio histórico; o ranking expõe somente o resumo de todas as filiais.
 - O administrador lê todos os lançamentos, sem poder alterá-los pela aplicação.
 - Não existem políticas de atualização ou exclusão para o histórico.
-- Comprovantes ficam no bucket privado `development-evidence`, limitado a JPG, PNG, WebP e PDF de até 10 MB.
+- Comprovantes ficam no bucket privado `campaign-gerentes-2026-evidence`, limitado a JPG, PNG, WebP e PDF de até 10 MB.
 - Somente a filial proprietária e o administrador podem gerar links temporários para os comprovantes.
 - A função do banco confirma a existência de cada objeto antes de calcular os pontos de desenvolvimento.
 - A chave administrativa é usada apenas pelo script local de configuração.
+- Todos os objetos relacionais ficam agrupados no schema `campaign_gerentes_2026`, isolados das tabelas do sistema Morpheus.
 
 Para recuperar uma conta sem acesso, redefina a senha pelo painel administrativo do Supabase. Não exponha a chave `service_role` para criar uma recuperação dentro do GitHub Pages.

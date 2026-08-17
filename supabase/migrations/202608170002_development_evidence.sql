@@ -1,14 +1,10 @@
 -- Comprovantes privados do indicador de desenvolvimento pessoal.
 
 insert into storage.buckets (
-  id,
-  name,
-  public,
-  file_size_limit,
-  allowed_mime_types
+  id, name, public, file_size_limit, allowed_mime_types
 ) values (
-  'development-evidence',
-  'development-evidence',
+  'campaign-gerentes-2026-evidence',
+  'campaign-gerentes-2026-evidence',
   false,
   10485760,
   array['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
@@ -18,10 +14,10 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
-create table public.submission_evidence (
+create table campaign_gerentes_2026.submission_evidence (
   id uuid primary key default gen_random_uuid(),
-  submission_id uuid not null references public.metric_submissions(id) on delete restrict,
-  branch_id uuid not null references public.branches(id) on delete restrict,
+  submission_id uuid not null references campaign_gerentes_2026.metric_submissions(id) on delete restrict,
+  branch_id uuid not null references campaign_gerentes_2026.branches(id) on delete restrict,
   category text not null check (category in ('books', 'courses', 'certifications', 'events')),
   storage_path text not null unique check (char_length(storage_path) between 20 and 500),
   original_name text not null check (char_length(original_name) between 1 and 255),
@@ -32,65 +28,68 @@ create table public.submission_evidence (
 );
 
 create index submission_evidence_submission_idx
-  on public.submission_evidence(submission_id, category);
+  on campaign_gerentes_2026.submission_evidence(submission_id, category);
 
 create index submission_evidence_branch_idx
-  on public.submission_evidence(branch_id, created_at desc);
+  on campaign_gerentes_2026.submission_evidence(branch_id, created_at desc);
 
-alter table public.submission_evidence enable row level security;
+alter table campaign_gerentes_2026.submission_evidence enable row level security;
 
-create policy "managers read own evidence metadata and admins read all"
-  on public.submission_evidence for select to authenticated
+create policy "campaign managers read own evidence metadata and admins read all"
+  on campaign_gerentes_2026.submission_evidence for select to authenticated
   using (
-    public.is_campaign_admin()
+    campaign_gerentes_2026.is_campaign_admin()
     or branch_id = (
-      select p.branch_id from public.profiles p where p.id = auth.uid()
+      select p.branch_id
+      from campaign_gerentes_2026.profiles p
+      where p.id = auth.uid()
     )
   );
 
-revoke all on public.submission_evidence from anon;
+revoke all on campaign_gerentes_2026.submission_evidence from public, anon;
 revoke insert, update, delete, truncate, references, trigger
-  on public.submission_evidence from authenticated;
-grant select on public.submission_evidence to authenticated;
+  on campaign_gerentes_2026.submission_evidence from authenticated;
+grant select on campaign_gerentes_2026.submission_evidence to authenticated;
+grant all on campaign_gerentes_2026.submission_evidence to service_role;
 
-create policy "managers upload evidence to their own prefix"
+create policy "campaign managers upload evidence to their own prefix"
   on storage.objects for insert to authenticated
   with check (
-    bucket_id = 'development-evidence'
+    bucket_id = 'campaign-gerentes-2026-evidence'
     and split_part(name, '/', 1) = auth.uid()::text
     and exists (
-      select 1 from public.profiles p
+      select 1 from campaign_gerentes_2026.profiles p
       where p.id = auth.uid() and p.role = 'manager'
     )
   );
 
-create policy "owners and admins read development evidence"
+create policy "campaign owners and admins read development evidence"
   on storage.objects for select to authenticated
   using (
-    bucket_id = 'development-evidence'
+    bucket_id = 'campaign-gerentes-2026-evidence'
     and (
       split_part(name, '/', 1) = auth.uid()::text
-      or public.is_campaign_admin()
+      or campaign_gerentes_2026.is_campaign_admin()
     )
   );
 
-create policy "managers delete only unlinked evidence"
+create policy "campaign managers delete only unlinked evidence"
   on storage.objects for delete to authenticated
   using (
-    bucket_id = 'development-evidence'
+    bucket_id = 'campaign-gerentes-2026-evidence'
     and split_part(name, '/', 1) = auth.uid()::text
     and not exists (
-      select 1 from public.submission_evidence se
+      select 1 from campaign_gerentes_2026.submission_evidence se
       where se.storage_path = storage.objects.name
     )
   );
 
--- A assinatura antiga não valida comprovantes e deixa de ser executável.
-revoke all on function public.submit_metrics(
+-- A assinatura antiga não valida comprovantes e deixa de existir.
+drop function campaign_gerentes_2026.submit_metrics(
   numeric, numeric, text, numeric, boolean, boolean, boolean, boolean
-) from public, authenticated;
+);
 
-create or replace function public.submit_metrics(
+create or replace function campaign_gerentes_2026.submit_metrics(
   p_obz_percentage numeric,
   p_revenue_percentage numeric,
   p_discount_band text,
@@ -101,19 +100,19 @@ create or replace function public.submit_metrics(
   p_development_events boolean,
   p_evidence jsonb
 )
-returns public.metric_submissions
+returns campaign_gerentes_2026.metric_submissions
 language plpgsql
 security definer
-set search_path = public
+set search_path = pg_catalog
 as $$
 declare
-  v_profile public.profiles;
+  v_profile campaign_gerentes_2026.profiles;
   v_obz_points numeric(5,2);
   v_revenue_points numeric(5,2);
   v_discount_points numeric(5,2);
   v_development_points numeric(5,2);
   v_initiatives integer := 0;
-  v_submission public.metric_submissions;
+  v_submission campaign_gerentes_2026.metric_submissions;
   v_item jsonb;
   v_category text;
   v_path text;
@@ -128,7 +127,9 @@ declare
   v_certifications boolean := false;
   v_events boolean := false;
 begin
-  select * into v_profile from public.profiles where id = auth.uid();
+  select * into v_profile
+  from campaign_gerentes_2026.profiles
+  where id = auth.uid();
 
   if v_profile.id is null or v_profile.role <> 'manager' or v_profile.branch_id is null then
     raise exception 'Conta sem permissão para enviar métricas';
@@ -179,7 +180,7 @@ begin
 
     select o.metadata into v_object_metadata
     from storage.objects o
-    where o.bucket_id = 'development-evidence' and o.name = v_path;
+    where o.bucket_id = 'campaign-gerentes-2026-evidence' and o.name = v_path;
 
     if v_object_metadata is null then
       raise exception 'Comprovante não encontrado no armazenamento';
@@ -191,7 +192,8 @@ begin
     end if;
 
     if exists (
-      select 1 from public.submission_evidence se where se.storage_path = v_path
+      select 1 from campaign_gerentes_2026.submission_evidence se
+      where se.storage_path = v_path
     ) then
       raise exception 'Comprovante já utilizado em outro lançamento';
     end if;
@@ -223,51 +225,25 @@ begin
   end;
   v_development_points := least(5, round((v_initiatives::numeric / 3 * 5), 2));
 
-  insert into public.metric_submissions (
-    branch_id,
-    submitted_by,
-    obz_percentage,
-    obz_points,
-    revenue_percentage,
-    revenue_points,
-    discount_band,
-    discount_percentage,
-    discount_points,
-    development_books,
-    development_courses,
-    development_certifications,
-    development_events,
-    development_points,
-    total_points
+  insert into campaign_gerentes_2026.metric_submissions (
+    branch_id, submitted_by, obz_percentage, obz_points,
+    revenue_percentage, revenue_points, discount_band,
+    discount_percentage, discount_points, development_books,
+    development_courses, development_certifications, development_events,
+    development_points, total_points
   ) values (
-    v_profile.branch_id,
-    auth.uid(),
-    round(p_obz_percentage, 2),
-    v_obz_points,
-    round(p_revenue_percentage, 2),
-    v_revenue_points,
-    p_discount_band,
-    round(p_discount_percentage, 2),
-    v_discount_points,
-    v_books,
-    v_courses,
-    v_certifications,
-    v_events,
-    v_development_points,
+    v_profile.branch_id, auth.uid(), round(p_obz_percentage, 2), v_obz_points,
+    round(p_revenue_percentage, 2), v_revenue_points, p_discount_band,
+    round(p_discount_percentage, 2), v_discount_points, v_books, v_courses,
+    v_certifications, v_events, v_development_points,
     round(v_obz_points + v_revenue_points + v_discount_points + v_development_points, 2)
-  )
-  returning * into v_submission;
+  ) returning * into v_submission;
 
   for v_item in select value from jsonb_array_elements(p_evidence)
   loop
-    insert into public.submission_evidence (
-      submission_id,
-      branch_id,
-      category,
-      storage_path,
-      original_name,
-      mime_type,
-      size_bytes
+    insert into campaign_gerentes_2026.submission_evidence (
+      submission_id, branch_id, category, storage_path,
+      original_name, mime_type, size_bytes
     ) values (
       v_submission.id,
       v_profile.branch_id,
@@ -283,10 +259,10 @@ begin
 end;
 $$;
 
-revoke all on function public.submit_metrics(
+revoke all on function campaign_gerentes_2026.submit_metrics(
   numeric, numeric, text, numeric, boolean, boolean, boolean, boolean, jsonb
-) from public;
+) from public, anon;
 
-grant execute on function public.submit_metrics(
+grant execute on function campaign_gerentes_2026.submit_metrics(
   numeric, numeric, text, numeric, boolean, boolean, boolean, boolean, jsonb
 ) to authenticated;
