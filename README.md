@@ -123,6 +123,6 @@ O navegador mostra a prévia, mas a função `submit_metrics` recalcula tudo no 
 - Somente a filial proprietária e o administrador podem gerar links temporários para os comprovantes.
 - A função do banco confirma a existência de cada objeto antes de calcular os pontos de desenvolvimento.
 - A chave administrativa é usada apenas pelo script local de configuração.
-- Todos os objetos relacionais ficam agrupados no schema `campaign_gerentes_2026`, isolados das tabelas do sistema Morpheus.
+- Todos os objetos relacionais ficam agrupados no schema `campaign_gerentes_2026` dentro de um projeto Supabase dedicado à campanha.
 
 Para recuperar uma conta sem acesso, redefina a senha pelo painel administrativo do Supabase. Não exponha a chave `service_role` para criar uma recuperação dentro do GitHub Pages.
