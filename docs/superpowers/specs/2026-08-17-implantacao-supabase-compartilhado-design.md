@@ -13,7 +13,7 @@ Objetos fora desse schema que não podem ser isolados dessa forma receberão nom
 - bucket privado: `campaign-gerentes-2026-evidence`;
 - domínio interno dos usuários: `@campanha-gerentes-2026.eletroluz.local`;
 - metadado dos usuários: `campaign_id = gerentes_2026`;
-- repositório: `JoaoVitorExceleds2026/campanha-gerentes-eletroluz`.
+- repositório: `EletroluzCII/campanha-gerentes-eletroluz`.
 
 Essa abordagem é preferível a tabelas prefixadas no schema `public` porque cria uma fronteira clara e permite exportar ou remover todos os objetos relacionais da campanha por schema, sem selecionar tabelas individualmente.
 
@@ -58,7 +58,7 @@ O banco só concederá pontos de desenvolvimento quando localizar o objeto real 
 
 ## GitHub e publicação
 
-O código será enviado para um repositório público chamado `campanha-gerentes-eletroluz` na conta `JoaoVitorExceleds2026`. O GitHub Actions executará os testes, gerará o build e publicará o diretório `dist` no GitHub Pages.
+O código será enviado para um repositório público chamado `campanha-gerentes-eletroluz` na conta `EletroluzCII`. O GitHub Actions executará os testes, gerará o build e publicará o diretório `dist` no GitHub Pages.
 
 Somente `VITE_SUPABASE_URL` e a chave pública anon/publishable serão configuradas como Secrets do repositório. Credenciais administrativas, senhas e tokens pessoais continuarão fora do Git.
 
