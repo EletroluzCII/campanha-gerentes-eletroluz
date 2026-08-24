@@ -6,8 +6,13 @@ export const WEIGHTS = Object.freeze({
 });
 
 export const DISCOUNT_LIMITS = Object.freeze({
-  A: 11.4,
-  B: 19.52,
+  under500: 11.4,
+  from501To2000: 19.52,
+});
+
+export const DISCOUNT_POINTS = Object.freeze({
+  under500: 18,
+  from501To2000: 17,
 });
 
 export const EVIDENCE_RULES = Object.freeze({
@@ -21,8 +26,8 @@ export function calculateScore(values) {
   const obzPercentage = Number(values.obzPercentage || 0);
   const revenuePercentage = Number(values.revenuePercentage || 0);
   const profitabilityPercentage = Number(values.profitabilityPercentage || 0);
-  const discountPercentage = Number(values.discountPercentage || 0);
-  const discountBand = values.discountBand === 'B' ? 'B' : 'A';
+  const discountUnder500Percentage = Number(values.discountUnder500Percentage || 0);
+  const discount501To2000Percentage = Number(values.discount501To2000Percentage || 0);
   const isProfitability = values.metricKind === 'profitability';
   const obzPoints = obzPercentage < 95
     ? 0
@@ -31,14 +36,20 @@ export function calculateScore(values) {
     WEIGHTS.revenue,
     (revenuePercentage / 100) * WEIGHTS.revenue,
   );
-  const hasIndicatorValue = isProfitability
-    ? values.profitabilityPercentage !== '' && values.profitabilityPercentage !== null && values.profitabilityPercentage !== undefined
-    : values.discountPercentage !== '' && values.discountPercentage !== null && values.discountPercentage !== undefined;
-  const indicatorPoints = !hasIndicatorValue
+  const hasProfitabilityValue = values.profitabilityPercentage !== '' && values.profitabilityPercentage !== null && values.profitabilityPercentage !== undefined;
+  const hasDiscountUnder500Value = values.discountUnder500Percentage !== '' && values.discountUnder500Percentage !== null && values.discountUnder500Percentage !== undefined;
+  const hasDiscount501To2000Value = values.discount501To2000Percentage !== '' && values.discount501To2000Percentage !== null && values.discount501To2000Percentage !== undefined;
+  const discountUnder500Points = !hasDiscountUnder500Value || isProfitability
     ? 0
-    : isProfitability
-      ? Math.min(WEIGHTS.indicator, (profitabilityPercentage / 100) * WEIGHTS.indicator)
-      : discountPercentage <= DISCOUNT_LIMITS[discountBand] ? WEIGHTS.indicator : 0;
+    : discountUnder500Percentage <= DISCOUNT_LIMITS.under500 ? DISCOUNT_POINTS.under500 : 0;
+  const discount501To2000Points = !hasDiscount501To2000Value || isProfitability
+    ? 0
+    : discount501To2000Percentage <= DISCOUNT_LIMITS.from501To2000 ? DISCOUNT_POINTS.from501To2000 : 0;
+  const indicatorPoints = isProfitability
+    ? !hasProfitabilityValue
+      ? 0
+      : Math.min(WEIGHTS.indicator, (profitabilityPercentage / 100) * WEIGHTS.indicator)
+    : discountUnder500Points + discount501To2000Points;
   const parts = {
     obzPoints: round2(obzPoints),
     indicatorPoints: round2(indicatorPoints),
@@ -47,6 +58,8 @@ export function calculateScore(values) {
 
   return {
     ...parts,
+    discountUnder500Points: round2(discountUnder500Points),
+    discount501To2000Points: round2(discount501To2000Points),
     totalPoints: round2(Object.values(parts).reduce((sum, item) => sum + item, 0)),
   };
 }
@@ -74,7 +87,10 @@ export function validateMetrics(values) {
     ['revenuePercentage', 'Informe o atingimento do faturamento.'],
     values.metricKind === 'profitability'
       ? ['profitabilityPercentage', 'Informe o percentual de rentabilidade.']
-      : ['discountPercentage', 'Informe o percentual de desconto.'],
+      : ['discountUnder500Percentage', 'Informe o desconto da faixa até R$ 500.'],
+    ...(values.metricKind === 'profitability'
+      ? []
+      : [['discount501To2000Percentage', 'Informe o desconto da faixa de R$ 501 a R$ 2.000.']]),
   ];
 
   numericFields.forEach(([field, requiredMessage]) => {
@@ -87,10 +103,6 @@ export function validateMetrics(values) {
       errors[field] = 'Use um percentual entre 0 e 999,99.';
     }
   });
-
-  if (values.metricKind !== 'profitability' && !['A', 'B'].includes(values.discountBand)) {
-    errors.discountBand = 'Selecione uma faixa válida.';
-  }
 
   return errors;
 }

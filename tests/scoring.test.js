@@ -11,8 +11,8 @@ import {
 const base = {
   obzPercentage: 100,
   revenuePercentage: 100,
-  discountBand: 'A',
-  discountPercentage: 11.4,
+  discountUnder500Percentage: 11.4,
+  discount501To2000Percentage: 19.52,
   developmentBooks: true,
   developmentBooksEvidence: true,
   developmentCourses: true,
@@ -28,6 +28,8 @@ test('calcula a pontuação operacional máxima em 95 pontos', () => {
     obzPoints: 20,
     indicatorPoints: 35,
     revenuePoints: 40,
+    discountUnder500Points: 18,
+    discount501To2000Points: 17,
     totalPoints: 95,
   });
 });
@@ -46,18 +48,16 @@ test('pontuação fica limitada ao máximo quando metas são superadas', () => {
   assert.equal(score.revenuePoints, 40);
 });
 
-test('desconto no teto pontua e acima do teto não pontua na faixa A', () => {
-  assert.equal(calculateScore({ ...base, discountPercentage: 11.4 }).indicatorPoints, 35);
-  assert.equal(calculateScore({ ...base, discountPercentage: 11.41 }).indicatorPoints, 0);
+test('cada faixa de desconto recebe sua pontuação independente ao atingir a meta', () => {
+  assert.equal(calculateScore(base).indicatorPoints, 35);
+  assert.equal(calculateScore({ ...base, discountUnder500Percentage: 11.41 }).indicatorPoints, 17);
+  assert.equal(calculateScore({ ...base, discount501To2000Percentage: 19.53 }).indicatorPoints, 18);
+  assert.equal(calculateScore({ ...base, discountUnder500Percentage: 11.41, discount501To2000Percentage: 19.53 }).indicatorPoints, 0);
 });
 
-test('desconto respeita o teto da faixa B', () => {
-  assert.equal(calculateScore({ ...base, discountBand: 'B', discountPercentage: 19.52 }).indicatorPoints, 35);
-  assert.equal(calculateScore({ ...base, discountBand: 'B', discountPercentage: 19.53 }).indicatorPoints, 0);
-});
-
-test('desconto vazio não concede pontos antes do preenchimento', () => {
-  assert.equal(calculateScore({ ...base, discountPercentage: '' }).indicatorPoints, 0);
+test('faixa vazia não concede seus pontos, sem remover os pontos da outra faixa', () => {
+  assert.equal(calculateScore({ ...base, discountUnder500Percentage: '' }).indicatorPoints, 17);
+  assert.equal(calculateScore({ ...base, discount501To2000Percentage: '' }).indicatorPoints, 18);
 });
 
 test('rentabilidade pontua proporcionalmente até o máximo de 35 pontos', () => {
@@ -76,11 +76,11 @@ test('rentabilidade não exige os campos de desconto', () => {
     ...base,
     metricKind: 'profitability',
     profitabilityPercentage: 80,
-    discountBand: 'C',
-    discountPercentage: '',
+    discountUnder500Percentage: '',
+    discount501To2000Percentage: '',
   });
-  assert.equal(errors.discountBand, undefined);
-  assert.equal(errors.discountPercentage, undefined);
+  assert.equal(errors.discountUnder500Percentage, undefined);
+  assert.equal(errors.discount501To2000Percentage, undefined);
 });
 
 test('desenvolvimento pontua proporcionalmente e limita em três iniciativas', () => {
@@ -116,12 +116,12 @@ test('validação rejeita campos vazios, negativos e fora do limite', () => {
     ...base,
     obzPercentage: '',
     revenuePercentage: -1,
-    discountPercentage: 1000,
-    discountBand: 'C',
+    discountUnder500Percentage: 1000,
+    discount501To2000Percentage: '',
   });
   assert.deepEqual(Object.keys(errors).sort(), [
-    'discountBand',
-    'discountPercentage',
+    'discount501To2000Percentage',
+    'discountUnder500Percentage',
     'obzPercentage',
     'revenuePercentage',
   ]);
