@@ -141,6 +141,16 @@ code { font-size: 0.86em; }
 .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.8rem; }
 .page-heading h1 { margin: .35rem 0 .4rem; font-size: clamp(1.65rem, 3vw, 2.3rem); letter-spacing: -.03em; }
 .page-heading p { max-width: 720px; margin: 0; color: var(--ink-muted); font-size: .9rem; }
+.campaign-banner { overflow: hidden; margin: 0 0 1.5rem; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+.campaign-banner img { display: block; width: 100%; height: auto; }
+.heading-actions, .period-total-actions { display: flex; align-items: flex-end; gap: .75rem; }
+.period-control { min-width: 150px; }
+.period-control label { color: var(--ink-muted); font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.period-control select { min-height: 44px; }
+.period-readonly { display: flex; align-items: center; gap: .9rem; padding: 1rem 1.15rem; border: 1px solid #c8d8e8; border-radius: var(--radius-md); background: var(--blue-50); color: var(--blue-900); }
+.period-readonly svg { flex: none; color: var(--blue-700); }
+.period-readonly strong, .period-readonly span { display: block; }
+.period-readonly span { margin-top: .15rem; color: #526f8d; font-size: .8rem; }
 .demo-banner { margin: -0.7rem 0 1.5rem; padding: .65rem 1rem; border-left: 3px solid var(--amber-700); background: var(--amber-50); color: #6d4a0c; font-size: .78rem; }
 
 /* Dashboard */
@@ -335,6 +345,8 @@ code { font-size: 0.86em; }
   .content { padding: 1.25rem 1rem 2.5rem; }
   .page-heading, .section-heading { align-items: stretch; flex-direction: column; }
   .page-heading .button, .section-heading > .button { width: 100%; }
+  .heading-actions, .period-total-actions { align-items: stretch; flex-direction: column; }
+  .heading-actions .button, .period-total-actions .button, .period-control { width: 100%; }
   .manager-hero { grid-template-columns: 1fr; gap: 1.3rem; }
   .hero-position { min-height: 94px; padding: 1rem 0 0; border-top: 1px solid rgba(255,255,255,.15); border-left: 0; }
   .hero-position strong { font-size: 2.2rem; }

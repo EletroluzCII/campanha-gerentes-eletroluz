@@ -26,9 +26,33 @@ const DEVELOPMENT_ITEMS = Object.freeze([
   { field: 'developmentEvents', evidenceField: 'developmentEventsEvidence', category: 'events', emoji: '🎤', title: 'Eventos', description: 'Foto, ingresso ou comprovante de participação' },
 ]);
 
+const CAMPAIGN_PERIODS = Object.freeze([
+  ['2026-07-01', 'Julho'],
+  ['2026-08-01', 'Agosto'],
+  ['2026-09-01', 'Setembro'],
+  ['2026-10-01', 'Outubro'],
+  ['2026-11-01', 'Novembro'],
+  ['2026-12-01', 'Dezembro'],
+]);
+const TOTAL_PERIOD = 'total';
+const defaultCampaignPeriod = () => {
+  const month = new Date().getMonth() + 1;
+  const clamped = Math.min(12, Math.max(7, month));
+  return `2026-${String(clamped).padStart(2, '0')}-01`;
+};
+const isProfitabilityBranch = () => ['Exceleds Iluminação', 'FOCO Distribuidora'].includes(state.profile?.display_name);
+const isTotalPeriod = () => state.selectedPeriod === TOTAL_PERIOD;
+const selectedPeriodDate = () => isTotalPeriod() ? null : state.selectedPeriod;
+const selectedPeriodLabel = () => isTotalPeriod()
+  ? 'Total'
+  : CAMPAIGN_PERIODS.find(([value]) => value === state.selectedPeriod)?.[1] || 'Período';
+const selectedPeriodName = (period) => CAMPAIGN_PERIODS.find(([value]) => value === period)?.[1] || '—';
+
 const emptyMetrics = () => ({
   obzPercentage: '',
   revenuePercentage: '',
+  profitabilityPercentage: '',
+  metricKind: 'discount',
   discountBand: 'A',
   discountPercentage: '',
   developmentBooks: false,
@@ -54,6 +78,8 @@ const state = {
   branches: [],
   metrics: emptyMetrics(),
   evidenceFiles: emptyEvidenceFiles(),
+  existingEvidence: [],
+  selectedPeriod: defaultCampaignPeriod(),
   errors: {},
   loading: false,
   modalOpen: false,
@@ -194,6 +220,14 @@ function pageHeading(kicker, title, description, action = '') {
   return `<div class="page-heading"><div><span class="eyebrow">${kicker}</span><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
 }
 
+function dashboardBanner() {
+  return `<figure class="campaign-banner"><img src="./banner-campanha.jpg" alt="Campanha de premiação Imersão EUA — segundo semestre" /></figure>`;
+}
+
+function periodControl() {
+  return `<div class="period-control field-group"><label for="campaignPeriod">Período</label><select id="campaignPeriod" name="campaignPeriod" aria-label="Período das métricas"><option value="${TOTAL_PERIOD}" ${isTotalPeriod() ? 'selected' : ''}>Total</option>${CAMPAIGN_PERIODS.map(([value, label]) => `<option value="${value}" ${state.selectedPeriod === value ? 'selected' : ''}>${label}</option>`).join('')}</select></div>`;
+}
+
 function summaryCard(label, value, detail, iconName, tone = '') {
   return `<article class="summary-card ${tone}"><div class="summary-icon">${icon(iconName, 21)}</div><div><span>${label}</span><strong>${value}</strong><small>${detail}</small></div></article>`;
 }
@@ -207,25 +241,26 @@ function renderManagerDashboard(content) {
   const progress = score === null ? 0 : Math.min(100, Number(score));
 
   content.innerHTML = `
-    ${pageHeading('Meu painel', `Olá, ${escapeHtml(state.profile.display_name)}`, 'Preencha os indicadores, acompanhe sua evolução e veja sua posição na campanha.')}
+    ${dashboardBanner()}
+    ${pageHeading('Meu painel', `Olá, ${escapeHtml(state.profile.display_name)}`, isTotalPeriod() ? 'Consulte a média dos meses preenchidos e acompanhe sua posição na campanha.' : `Preencha ou corrija as métricas de ${selectedPeriodLabel().toLowerCase()} e acompanhe sua evolução.`)}
     ${appService.isDemo ? '<div class="demo-banner" role="status">Modo de demonstração local — nenhum dado real será gravado.</div>' : ''}
     <section class="manager-hero" aria-label="Resumo do desempenho">
       <div class="score-overview">
-        <span>Sua pontuação atual</span><strong>${scoreText}</strong>
+        <span>${isTotalPeriod() ? 'Sua média atual' : 'Sua pontuação do mês'}</span><strong>${scoreText}</strong>
         <div class="progress-track" aria-label="${progress}% da pontuação máxima"><span style="width:${progress}%"></span></div>
-        <small>${own?.updated_at ? `Atualizado em ${formatDate(own.updated_at)}` : 'Envie suas primeiras métricas para entrar no ranking.'}</small>
+        <small>${own?.updated_at ? `${isTotalPeriod() ? `${own.periods_count} meses preenchidos · ` : ''}Atualizado em ${formatDate(own.updated_at)}` : 'Envie suas primeiras métricas para entrar no ranking.'}</small>
       </div>
       <div class="hero-position"><span>Posição</span><strong>${position === '—' ? '—' : `${position}º`}</strong><small>entre 12 filiais participantes</small></div>
       <div class="hero-mark" aria-hidden="true">${icon('trophy', 120)}</div>
     </section>
     <section class="summary-grid" aria-label="Resumo da campanha">
       ${summaryCard('Pontuação máxima', '100 pts', 'Quatro indicadores', 'target')}
-      ${summaryCard('Filiais com dados', `${completed} de 12`, `${12 - completed} ainda sem envio`, 'users')}
+      ${summaryCard('Filiais com dados', `${completed} de 12`, `${12 - completed} ainda sem envio em ${selectedPeriodLabel().toLowerCase()}`, 'users')}
       ${summaryCard('Última atualização', own?.updated_at ? formatDate(own.updated_at, false) : '—', own?.updated_at ? formatDate(own.updated_at).split(' ')[1] || '' : 'Nenhum envio', 'history')}
     </section>
     ${renderMetricsForm()}
     <section class="section-block">
-      <div class="section-heading"><div><span class="eyebrow">Classificação</span><h2>Ranking das filiais</h2><p>O ranking considera o lançamento mais recente de cada unidade.</p></div><button class="button button-secondary" data-action="refresh-ranking">${icon('refresh', 18)} Atualizar</button></div>
+      <div class="section-heading"><div><span class="eyebrow">Classificação</span><h2>Ranking das filiais</h2><p>${isTotalPeriod() ? 'O ranking considera a média dos meses preenchidos por cada unidade.' : `O ranking considera os resultados de ${selectedPeriodLabel().toLowerCase()}.`}</p></div><button class="button button-secondary" data-action="refresh-ranking">${icon('refresh', 18)} Atualizar</button></div>
       ${renderRankingTable()}
     </section>`;
 }
@@ -239,12 +274,23 @@ function fieldError(name) {
 }
 
 function renderMetricsForm() {
+  if (isTotalPeriod()) {
+    const own = latestOwnRanking();
+    return `<section class="section-block metrics-section">
+      <div class="section-heading"><div><span class="eyebrow">Visão consolidada</span><h2>Média das métricas</h2><p>Selecione um mês no filtro para preencher ou corrigir os dados da filial.</p></div><div class="period-total-actions">${periodControl()}<div class="total-chip"><span>Média atual</span><strong>${own?.total_points === null || !own ? 'Sem dados' : `${formatPoints(own.total_points)} pts`}</strong></div></div></div>
+      <div class="period-readonly" role="status">${icon('chart', 22)}<div><strong>Modo de consulta</strong><span>A opção Total considera somente os ${own?.periods_count || 0} meses preenchidos; meses sem lançamento não entram na média.</span></div></div>
+    </section>`;
+  }
+
   const score = calculateScore(state.metrics);
-  const discountStatus = state.metrics.discountPercentage === ''
+  const isProfitability = state.metrics.metricKind === 'profitability';
+  const indicatorStatus = isProfitability
+    ? state.metrics.profitabilityPercentage === '' ? 'Aguardando valor' : Number(state.metrics.profitabilityPercentage) >= 100 ? 'Meta atingida' : 'Em andamento'
+    : state.metrics.discountPercentage === ''
     ? 'Aguardando valor'
     : Number(state.metrics.discountPercentage) <= DISCOUNT_LIMITS[state.metrics.discountBand] ? 'Dentro do teto' : 'Acima do teto';
   return `<section class="section-block metrics-section">
-    <div class="section-heading"><div><span class="eyebrow">Novo lançamento</span><h2>Atualize suas métricas</h2><p>Revise os valores antes de salvar. Cada envio ficará registrado no histórico.</p></div><div class="total-chip"><span>Total previsto</span><strong id="form-total">${formatPoints(score.totalPoints)} pts</strong></div></div>
+    <div class="section-heading"><div><span class="eyebrow">${state.existingEvidence.length || state.metrics.obzPercentage !== '' ? 'Lançamento mensal' : 'Novo lançamento'}</span><h2>Atualize suas métricas</h2><p>Dados de ${selectedPeriodLabel().toLowerCase()}. Um novo salvamento corrige este mesmo mês.</p></div><div class="period-total-actions">${periodControl()}<div class="total-chip"><span>Total previsto</span><strong id="form-total">${formatPoints(score.totalPoints)} pts</strong></div></div></div>
     <form id="metrics-form" novalidate>
       <div class="metrics-grid">
         <article class="metric-card">
@@ -260,14 +306,9 @@ function renderMetricsForm() {
           <div id="revenue-score">${scoreBadge(score.revenuePoints, 40, Number(state.metrics.revenuePercentage) >= 100 ? 'Meta atingida' : 'Em andamento')}</div>
         </article>
         <article class="metric-card">
-          <div class="metric-head"><span class="metric-icon">${icon('tag', 22)}</span><div><span>Indicador 3</span><h3>Controle de descontos</h3></div><span class="weight">35%</span></div>
-          <p>Reconhece negociações que preservam a margem da filial.</p>
-          <div class="two-fields">
-            <div class="field-group"><label for="discountBand">Faixa de venda</label><select id="discountBand" name="discountBand"><option value="A" ${state.metrics.discountBand === 'A' ? 'selected' : ''}>Até R$ 500 mil</option><option value="B" ${state.metrics.discountBand === 'B' ? 'selected' : ''}>R$ 501 mil a R$ 2 milhões</option></select>${fieldError('discountBand')}</div>
-            <div class="field-group"><label for="discountPercentage">Desconto atual (%)</label><div class="input-suffix"><input type="number" id="discountPercentage" name="discountPercentage" min="0" max="999.99" step="0.01" value="${state.metrics.discountPercentage}" placeholder="Ex.: 10,8" aria-describedby="discountPercentage-error" /><span>%</span></div>${fieldError('discountPercentage')}</div>
-          </div>
-          <small class="rule-note" id="discount-limit">Teto atual: ${formatPercentage(DISCOUNT_LIMITS[state.metrics.discountBand])}</small>
-          <div id="discount-score">${scoreBadge(score.discountPoints, 35, discountStatus)}</div>
+          <div class="metric-head"><span class="metric-icon">${icon(isProfitability ? 'growth' : 'tag', 22)}</span><div><span>Indicador 3</span><h3>${isProfitability ? 'Rentabilidade' : 'Controle de descontos'}</h3></div><span class="weight">35%</span></div>
+          ${isProfitability ? `<p>Avalia a rentabilidade alcançada no mês em relação à meta.</p><div class="field-group"><label for="profitabilityPercentage">Rentabilidade (%)</label><div class="input-suffix"><input type="number" id="profitabilityPercentage" name="profitabilityPercentage" min="0" max="999.99" step="0.01" value="${state.metrics.profitabilityPercentage}" placeholder="Ex.: 92,5" aria-describedby="profitabilityPercentage-help profitabilityPercentage-error" /><span>%</span></div><small id="profitabilityPercentage-help">A pontuação é proporcional e atinge o máximo em 100%.</small>${fieldError('profitabilityPercentage')}</div>` : `<p>Reconhece negociações que preservam a margem da filial.</p><div class="two-fields"><div class="field-group"><label for="discountBand">Faixa de venda</label><select id="discountBand" name="discountBand"><option value="A" ${state.metrics.discountBand === 'A' ? 'selected' : ''}>Até R$ 500 mil</option><option value="B" ${state.metrics.discountBand === 'B' ? 'selected' : ''}>R$ 501 mil a R$ 2 milhões</option></select>${fieldError('discountBand')}</div><div class="field-group"><label for="discountPercentage">Desconto atual (%)</label><div class="input-suffix"><input type="number" id="discountPercentage" name="discountPercentage" min="0" max="999.99" step="0.01" value="${state.metrics.discountPercentage}" placeholder="Ex.: 10,8" aria-describedby="discountPercentage-error" /><span>%</span></div>${fieldError('discountPercentage')}</div></div><small class="rule-note" id="discount-limit">Teto atual: ${formatPercentage(DISCOUNT_LIMITS[state.metrics.discountBand])}</small>`}
+          <div id="indicator-score">${scoreBadge(score.indicatorPoints, 35, indicatorStatus)}</div>
         </article>
         <article class="metric-card">
           <div class="metric-head"><span class="metric-icon">${icon('book', 22)}</span><div><span>Indicador 4</span><h3>Desenvolvimento pessoal</h3></div><span class="weight">5%</span></div>
@@ -278,7 +319,7 @@ function renderMetricsForm() {
           <div id="development-score">${scoreBadge(score.developmentPoints, 5, `${score.initiatives} de 3 comprovadas`)}</div>
         </article>
       </div>
-      <div class="form-submit-bar"><div><span>Pontuação prevista</span><strong id="submit-total">${formatPoints(score.totalPoints)} <small>/ 100 pts</small></strong></div><button class="button button-primary" type="submit">${icon('save', 18)} Revisar e salvar</button></div>
+      <div class="form-submit-bar"><div><span>Pontuação prevista</span><strong id="submit-total">${formatPoints(score.totalPoints)} <small>/ 100 pts</small></strong></div><button class="button button-primary" type="submit">${icon('save', 18)} ${state.existingEvidence.length || state.metrics.obzPercentage !== '' ? 'Revisar e atualizar' : 'Revisar e salvar'}</button></div>
     </form>
   </section>`;
 }
@@ -286,16 +327,18 @@ function renderMetricsForm() {
 function developmentCheck(item) {
   const selected = state.metrics[item.field];
   const file = state.evidenceFiles[item.field];
+  const existingFile = state.existingEvidence.find((entry) => entry.category === item.category);
+  const evidenceLabel = file || existingFile;
   const inputId = `evidence-${item.category}`;
   const accept = EVIDENCE_RULES.acceptedTypes.join(',');
-  return `<div class="development-option ${selected ? 'is-selected' : ''} ${file ? 'has-file' : ''}">
+  return `<div class="development-option ${selected ? 'is-selected' : ''} ${evidenceLabel ? 'has-file' : ''}">
     <label class="check-option"><input type="checkbox" name="${item.field}" ${selected ? 'checked' : ''} /><span class="custom-check">${icon('check', 15)}</span><span><strong><span class="development-emoji" aria-hidden="true">${item.emoji}</span> ${item.title}</strong><small>${item.description}</small></span></label>
     ${selected ? `<div class="evidence-upload">
-      <div class="evidence-heading"><span>Comprovante obrigatório</span><small>${file ? 'Arquivo pronto para envio' : 'Ainda não anexado'}</small></div>
+      <div class="evidence-heading"><span>Comprovante obrigatório</span><small>${file ? 'Arquivo pronto para envio' : existingFile ? 'Comprovante já salvo' : 'Ainda não anexado'}</small></div>
       <input class="evidence-input" type="file" id="${inputId}" data-evidence-for="${item.field}" accept="${accept}" aria-describedby="${item.evidenceField}-help ${item.evidenceField}-error" />
-      <label class="evidence-picker" for="${inputId}">${icon('download', 17)} ${file ? 'Substituir arquivo' : 'Selecionar arquivo'}</label>
+      <label class="evidence-picker" for="${inputId}">${icon('download', 17)} ${evidenceLabel ? 'Substituir arquivo' : 'Selecionar arquivo'}</label>
       <small id="${item.evidenceField}-help" class="evidence-help">JPG, PNG, WebP ou PDF · máximo 10 MB</small>
-      ${file ? `<div class="selected-file"><span class="file-mark">${file.type === 'application/pdf' ? 'PDF' : 'IMG'}</span><span><strong>${escapeHtml(file.name)}</strong><small>${formatFileSize(file.size)}</small></span><button type="button" class="icon-button remove-file" data-action="remove-evidence" data-evidence-for="${item.field}" aria-label="Remover comprovante de ${item.title}">${icon('close', 18)}</button></div>` : ''}
+      ${evidenceLabel ? `<div class="selected-file"><span class="file-mark">${evidenceLabel.mime_type === 'application/pdf' || evidenceLabel.type === 'application/pdf' ? 'PDF' : 'IMG'}</span><span><strong>${escapeHtml(evidenceLabel.original_name || evidenceLabel.name)}</strong><small>${file ? formatFileSize(file.size) : 'Comprovante salvo'}</small></span><button type="button" class="icon-button remove-file" data-action="remove-evidence" data-evidence-for="${item.field}" aria-label="Remover comprovante de ${item.title}">${icon('close', 18)}</button></div>` : ''}
       ${fieldError(item.evidenceField)}
     </div>` : ''}
   </div>`;
@@ -322,27 +365,34 @@ function renderAdminDashboard(content) {
   const leader = completed[0];
   const average = completed.length ? completed.reduce((sum, item) => sum + Number(item.total_points), 0) / completed.length : 0;
   content.innerHTML = `
-    ${pageHeading('Painel administrativo', 'Visão geral da campanha', 'Acompanhe a participação, compare resultados e consulte os últimos indicadores.', `<button class="button button-secondary" data-action="refresh-admin">${icon('refresh', 18)} Atualizar dados</button>`)}
+    ${dashboardBanner()}
+    ${pageHeading('Painel administrativo', 'Visão geral da campanha', isTotalPeriod() ? 'Acompanhe a média dos meses preenchidos, compare resultados e consulte os indicadores.' : `Acompanhe os resultados de ${selectedPeriodLabel().toLowerCase()}, compare filiais e consulte os indicadores.`, `<div class="heading-actions">${periodControl()}<button class="button button-secondary" data-action="refresh-admin">${icon('refresh', 18)} Atualizar dados</button></div>`)}
     ${appService.isDemo ? '<div class="demo-banner" role="status">Modo de demonstração local — dados ilustrativos.</div>' : ''}
     <section class="summary-grid admin-summary">
-      ${summaryCard('Filiais participantes', `${completed.length} de 12`, `${12 - completed.length} aguardando envio`, 'users', 'blue')}
+      ${summaryCard('Filiais participantes', `${completed.length} de 12`, `${12 - completed.length} aguardando envio em ${selectedPeriodLabel().toLowerCase()}`, 'users', 'blue')}
       ${summaryCard('Líder atual', leader ? escapeHtml(leader.branch_name) : 'Sem dados', leader ? `${formatPoints(leader.total_points)} pontos` : 'Nenhum lançamento', 'trophy', 'red')}
       ${summaryCard('Média geral', `${formatPoints(average)} pts`, 'Entre filiais com dados', 'chart')}
       ${summaryCard('Última atualização', leader?.updated_at ? formatDate(leader.updated_at, false) : '—', leader?.updated_at ? `às ${formatDate(leader.updated_at).split(' ')[1]}` : 'Nenhum lançamento', 'history')}
     </section>
     <section class="section-block">
-      <div class="section-heading"><div><span class="eyebrow">Classificação</span><h2>Ranking geral</h2><p>Posições calculadas a partir do envio mais recente de cada filial.</p></div></div>
+      <div class="section-heading"><div><span class="eyebrow">Classificação</span><h2>Ranking geral</h2><p>${isTotalPeriod() ? 'Posições calculadas pela média dos meses preenchidos.' : `Posições calculadas pelos dados de ${selectedPeriodLabel().toLowerCase()}.`}</p></div></div>
       ${renderRankingTable()}
     </section>
     <section class="section-block">
-      <div class="section-heading"><div><span class="eyebrow">Indicadores</span><h2>Últimas métricas por filial</h2><p>Visão detalhada disponível somente para administradores.</p></div><button class="button button-secondary" data-action="export-latest">${icon('download', 18)} Exportar CSV</button></div>
+      <div class="section-heading"><div><span class="eyebrow">Indicadores</span><h2>${isTotalPeriod() ? 'Médias por filial' : 'Métricas por filial'}</h2><p>Visão detalhada disponível somente para administradores.</p></div><button class="button button-secondary" data-action="export-latest">${icon('download', 18)} Exportar CSV</button></div>
       ${renderAdminLatestTable()}
     </section>`;
 }
 
 function renderAdminLatestTable() {
   if (!state.adminLatest.length) return renderEmpty('chart', 'Nenhuma métrica enviada', 'As métricas detalhadas aparecerão após o primeiro lançamento.');
-  return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr><th>Filial</th><th>OBZ</th><th>Faturamento</th><th>Desconto</th><th>Desenvolvimento</th><th>Total</th></tr></thead><tbody>${state.adminLatest.map((row) => `<tr><td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td><td data-label="OBZ">${formatPercentage(row.obz_percentage)}</td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)}</td><td data-label="Desconto">${formatPercentage(row.discount_percentage)} <small>(Faixa ${row.discount_band})</small></td><td data-label="Desenvolvimento">${formatPoints(row.development_points)} / 5</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong></td></tr>`).join('')}</tbody></table></div></div>`;
+  return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr><th>Filial</th><th>OBZ</th><th>Faturamento</th><th>Indicador 35%</th><th>Desenvolvimento</th><th>Total</th></tr></thead><tbody>${state.adminLatest.map((row) => {
+    const profitability = row.metric_kind === 'profitability';
+    const indicator = profitability
+      ? `${formatPercentage(row.profitability_percentage)} <small>Rentabilidade</small>`
+      : `${formatPercentage(row.discount_percentage)} <small>Desconto · Faixa ${row.discount_band}</small>`;
+    return `<tr><td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td><td data-label="OBZ">${formatPercentage(row.obz_percentage)}</td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)}</td><td data-label="${profitability ? 'Rentabilidade' : 'Desconto'}">${indicator}</td><td data-label="Desenvolvimento">${formatPoints(row.development_points)} / 5</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong><small>${isTotalPeriod() ? `${row.periods_count} meses` : ''}</small></td></tr>`;
+  }).join('')}</tbody></table></div></div>`;
 }
 
 function renderHistory(content) {
@@ -355,9 +405,13 @@ function renderHistory(content) {
 
 function renderHistoryTable() {
   if (!state.history.length) return renderEmpty('history', 'Nenhum lançamento encontrado', 'Quando houver envios dentro do filtro escolhido, eles aparecerão aqui.');
-  return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr>${state.profile.role === 'admin' ? '<th>Filial</th>' : ''}<th>Data</th><th>OBZ</th><th>Faturamento</th><th>Desconto</th><th>Desenvolvimento</th><th>Comprovantes</th><th>Total</th></tr></thead><tbody>${state.history.map((row) => {
+  return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr>${state.profile.role === 'admin' ? '<th>Filial</th>' : ''}<th>Período</th><th>Atualizado em</th><th>OBZ</th><th>Faturamento</th><th>Indicador 35%</th><th>Desenvolvimento</th><th>Comprovantes</th><th>Total</th></tr></thead><tbody>${state.history.map((row) => {
     const evidenceCount = Number(row.evidence_count || 0);
-    return `<tr>${state.profile.role === 'admin' ? `<td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td>` : ''}<td data-label="Data">${formatDate(row.created_at)}</td><td data-label="OBZ">${formatPercentage(row.obz_percentage)} <small>${formatPoints(row.obz_points)} pts</small></td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)} <small>${formatPoints(row.revenue_points)} pts</small></td><td data-label="Desconto">${formatPercentage(row.discount_percentage)} <small>${formatPoints(row.discount_points)} pts</small></td><td data-label="Desenvolvimento">${formatPoints(row.development_points)} pts</td><td data-label="Comprovantes">${evidenceCount ? `<button type="button" class="button button-table" data-action="view-evidence" data-submission-id="${row.id}">${icon('eye', 16)} Ver ${evidenceCount}</button>` : '<span class="muted-text">Nenhum</span>'}</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong></td></tr>`;
+    const profitability = row.metric_kind === 'profitability';
+    const indicator = profitability
+      ? `${formatPercentage(row.profitability_percentage)} <small>${formatPoints(row.profitability_points)} pts · Rentabilidade</small>`
+      : `${formatPercentage(row.discount_percentage)} <small>${formatPoints(row.discount_points)} pts · Desconto</small>`;
+    return `<tr>${state.profile.role === 'admin' ? `<td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td>` : ''}<td data-label="Período">${row.metric_period ? selectedPeriodName(row.metric_period) : '—'}</td><td data-label="Atualizado em">${formatDate(row.created_at)}</td><td data-label="OBZ">${formatPercentage(row.obz_percentage)} <small>${formatPoints(row.obz_points)} pts</small></td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)} <small>${formatPoints(row.revenue_points)} pts</small></td><td data-label="${profitability ? 'Rentabilidade' : 'Desconto'}">${indicator}</td><td data-label="Desenvolvimento">${formatPoints(row.development_points)} pts</td><td data-label="Comprovantes">${evidenceCount ? `<button type="button" class="button button-table" data-action="view-evidence" data-submission-id="${row.id}">${icon('eye', 16)} Ver ${evidenceCount}</button>` : '<span class="muted-text">Nenhum</span>'}</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong></td></tr>`;
   }).join('')}</tbody></table></div></div>`;
 }
 
@@ -398,7 +452,8 @@ function renderConfirmModal() {
     return;
   }
   const score = calculateScore(state.metrics);
-  root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel><button class="icon-button modal-close" data-action="close-modal" aria-label="Fechar">${icon('close', 20)}</button><div class="modal-icon">${icon('save', 25)}</div><h2 id="modal-title">Confirmar lançamento</h2><p>Revise a pontuação antes de registrar. Este envio e seus comprovantes ficarão preservados no histórico.</p><div class="review-list"><span>OBZ <strong>${formatPoints(score.obzPoints)} / 20</strong></span><span>Faturamento <strong>${formatPoints(score.revenuePoints)} / 40</strong></span><span>Descontos <strong>${formatPoints(score.discountPoints)} / 35</strong></span><span>Desenvolvimento <strong>${formatPoints(score.developmentPoints)} / 5</strong></span><span>Comprovantes <strong>${score.initiatives} arquivo${score.initiatives === 1 ? '' : 's'}</strong></span><span class="review-total">Pontuação total <strong>${formatPoints(score.totalPoints)} / 100</strong></span></div><div class="upload-progress" id="upload-progress" role="status"></div><div class="modal-actions"><button class="button button-secondary" data-action="close-modal">Voltar e revisar</button><button class="button button-primary" data-action="confirm-submit">Confirmar envio</button></div></section></div>`;
+  const indicatorLabel = state.metrics.metricKind === 'profitability' ? 'Rentabilidade' : 'Descontos';
+  root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel><button class="icon-button modal-close" data-action="close-modal" aria-label="Fechar">${icon('close', 20)}</button><div class="modal-icon">${icon('save', 25)}</div><h2 id="modal-title">Confirmar lançamento</h2><p>Revise a pontuação antes de registrar. Este envio e seus comprovantes ficarão preservados no histórico.</p><div class="review-list"><span>OBZ <strong>${formatPoints(score.obzPoints)} / 20</strong></span><span>Faturamento <strong>${formatPoints(score.revenuePoints)} / 40</strong></span><span>${indicatorLabel} <strong>${formatPoints(score.indicatorPoints)} / 35</strong></span><span>Desenvolvimento <strong>${formatPoints(score.developmentPoints)} / 5</strong></span><span>Comprovantes <strong>${score.initiatives} arquivo${score.initiatives === 1 ? '' : 's'}</strong></span><span class="review-total">Pontuação total <strong>${formatPoints(score.totalPoints)} / 100</strong></span></div><div class="upload-progress" id="upload-progress" role="status"></div><div class="modal-actions"><button class="button button-secondary" data-action="close-modal">Voltar e revisar</button><button class="button button-primary" data-action="confirm-submit">Confirmar envio</button></div></section></div>`;
   setTimeout(() => root.querySelector('[data-action="confirm-submit"]')?.focus(), 0);
 }
 
@@ -418,8 +473,37 @@ function renderToast() {
 }
 
 async function loadDashboardData() {
-  state.ranking = await appService.getRanking();
-  if (state.profile.role === 'admin') state.adminLatest = await appService.getAdminLatest();
+  const period = selectedPeriodDate();
+  state.ranking = await appService.getRanking(period);
+  if (state.profile.role === 'admin') {
+    state.adminLatest = await appService.getAdminLatest(period);
+    return;
+  }
+  state.metrics = { ...emptyMetrics(), metricKind: isProfitabilityBranch() ? 'profitability' : 'discount', metricPeriod: state.selectedPeriod };
+  state.evidenceFiles = emptyEvidenceFiles();
+  state.existingEvidence = [];
+  if (!isTotalPeriod()) {
+    const submission = await appService.getCurrentSubmission(state.selectedPeriod);
+    if (submission) {
+      state.metrics = {
+        ...state.metrics,
+        obzPercentage: toNumberInput(submission.obz_percentage),
+        revenuePercentage: toNumberInput(submission.revenue_percentage),
+        metricKind: submission.metric_kind,
+        discountBand: submission.discount_band || 'A',
+        discountPercentage: submission.discount_percentage === null ? '' : toNumberInput(submission.discount_percentage),
+        profitabilityPercentage: submission.profitability_percentage === null ? '' : toNumberInput(submission.profitability_percentage),
+        developmentBooks: submission.development_books,
+        developmentCourses: submission.development_courses,
+        developmentCertifications: submission.development_certifications,
+        developmentEvents: submission.development_events,
+      };
+      state.existingEvidence = submission.submission_evidence || [];
+      DEVELOPMENT_ITEMS.forEach((item) => {
+        state.metrics[item.evidenceField] = state.existingEvidence.some((entry) => entry.category === item.category);
+      });
+    }
+  }
 }
 
 async function loadHistoryData() {
@@ -437,9 +521,13 @@ function updateMetricPreview() {
   const discountStatus = state.metrics.discountPercentage === ''
     ? 'Aguardando valor'
     : Number(state.metrics.discountPercentage) <= DISCOUNT_LIMITS[state.metrics.discountBand] ? 'Dentro do teto' : 'Acima do teto';
-  set('#discount-score', scoreBadge(score.discountPoints, 35, discountStatus));
+  const isProfitability = state.metrics.metricKind === 'profitability';
+  const indicatorStatus = isProfitability
+    ? state.metrics.profitabilityPercentage === '' ? 'Aguardando valor' : Number(state.metrics.profitabilityPercentage) >= 100 ? 'Meta atingida' : 'Em andamento'
+    : discountStatus;
+  set('#indicator-score', scoreBadge(score.indicatorPoints, 35, indicatorStatus));
   set('#development-score', scoreBadge(score.developmentPoints, 5, `${score.initiatives} de 3 comprovadas`));
-  set('#discount-limit', `Teto atual: ${formatPercentage(DISCOUNT_LIMITS[state.metrics.discountBand])}`);
+  if (!isProfitability) set('#discount-limit', `Teto atual: ${formatPercentage(DISCOUNT_LIMITS[state.metrics.discountBand])}`);
 }
 
 function syncMetricState(target) {
@@ -482,6 +570,14 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('change', (event) => {
+  if (event.target.id === 'campaignPeriod') {
+    state.selectedPeriod = event.target.value;
+    state.errors = {};
+    loadDashboardData()
+      .then(() => renderCurrentView())
+      .catch(() => showToast('Não foi possível carregar o período selecionado.', 'error'));
+    return;
+  }
   if (event.target.matches('[data-evidence-for]')) {
     handleEvidenceSelection(event.target);
     return;
@@ -491,8 +587,14 @@ document.addEventListener('change', (event) => {
     if (event.target.type === 'checkbox') {
       const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === event.target.name);
       if (item) {
-        if (!event.target.checked) state.evidenceFiles[item.field] = null;
-        state.metrics[item.evidenceField] = Boolean(event.target.checked && state.evidenceFiles[item.field]);
+        if (!event.target.checked) {
+          state.evidenceFiles[item.field] = null;
+          state.existingEvidence = state.existingEvidence.filter((entry) => entry.category !== item.category);
+        }
+        state.metrics[item.evidenceField] = Boolean(event.target.checked && (
+          state.evidenceFiles[item.field]
+          || state.existingEvidence.some((entry) => entry.category === item.category)
+        ));
         if (!event.target.checked) delete state.errors[item.evidenceField];
         renderCurrentView();
       }
@@ -605,6 +707,7 @@ document.addEventListener('click', async (event) => {
     state.view = 'dashboard';
     state.metrics = emptyMetrics();
     state.evidenceFiles = emptyEvidenceFiles();
+    state.existingEvidence = [];
     state.errors = {};
     renderLogin();
   }
@@ -612,6 +715,7 @@ document.addEventListener('click', async (event) => {
     const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === button.dataset.evidenceFor);
     if (item) {
       state.evidenceFiles[item.field] = null;
+      state.existingEvidence = state.existingEvidence.filter((entry) => entry.category !== item.category);
       state.metrics[item.evidenceField] = false;
       state.errors[item.evidenceField] = 'Anexe um comprovante para esta iniciativa.';
       renderCurrentView();
@@ -647,7 +751,7 @@ document.addEventListener('click', async (event) => {
     button.textContent = 'Enviando...';
     document.querySelectorAll('#modal-root button').forEach((modalButton) => { modalButton.disabled = true; });
     try {
-      await appService.submitMetrics(state.metrics, state.evidenceFiles, ({ completed, total, stage }) => {
+      await appService.submitMetrics(state.metrics, state.evidenceFiles, state.existingEvidence, ({ completed, total, stage }) => {
         const progress = document.querySelector('#upload-progress');
         if (!progress) return;
         progress.classList.add('is-visible');
@@ -658,6 +762,7 @@ document.addEventListener('click', async (event) => {
       state.modalOpen = false;
       state.metrics = emptyMetrics();
       state.evidenceFiles = emptyEvidenceFiles();
+      state.existingEvidence = [];
       state.errors = {};
       await loadDashboardData();
       await loadHistoryData();
@@ -687,12 +792,16 @@ document.addEventListener('click', async (event) => {
   if (action === 'export-latest') {
     downloadCsv(state.adminLatest.map((row) => ({
       Filial: row.branch_name,
+      Periodo: isTotalPeriod() ? 'Total (média)' : selectedPeriodLabel(),
       OBZ: row.obz_percentage,
       Faturamento: row.revenue_percentage,
+      Indicador: row.metric_kind === 'profitability' ? 'Rentabilidade' : 'Desconto',
+      Rentabilidade: row.profitability_percentage,
       Desconto: row.discount_percentage,
-      Faixa: row.discount_band,
+      Faixa_de_venda: row.discount_band,
       Desenvolvimento: row.development_points,
       Total: row.total_points,
+      Meses_preenchidos: row.periods_count,
       Atualizado_em: formatDate(row.updated_at),
     })), 'ultimas-metricas-eletroluz.csv');
   }
@@ -704,8 +813,12 @@ document.addEventListener('click', async (event) => {
       OBZ_pontos: row.obz_points,
       Faturamento_percentual: row.revenue_percentage,
       Faturamento_pontos: row.revenue_points,
+      Indicador: row.metric_kind === 'profitability' ? 'Rentabilidade' : 'Desconto',
+      Rentabilidade_percentual: row.profitability_percentage,
+      Rentabilidade_pontos: row.profitability_points,
       Desconto_percentual: row.discount_percentage,
       Desconto_pontos: row.discount_points,
+      Periodo: selectedPeriodName(row.metric_period),
       Desenvolvimento_pontos: row.development_points,
       Comprovantes: row.evidence_count || 0,
       Total: row.total_points,

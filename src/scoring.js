@@ -1,6 +1,6 @@
 export const WEIGHTS = Object.freeze({
   obz: 20,
-  discount: 35,
+  indicator: 35,
   revenue: 40,
   development: 5,
 });
@@ -20,8 +20,10 @@ const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 1
 export function calculateScore(values) {
   const obzPercentage = Number(values.obzPercentage || 0);
   const revenuePercentage = Number(values.revenuePercentage || 0);
+  const profitabilityPercentage = Number(values.profitabilityPercentage || 0);
   const discountPercentage = Number(values.discountPercentage || 0);
   const discountBand = values.discountBand === 'B' ? 'B' : 'A';
+  const isProfitability = values.metricKind === 'profitability';
   const initiatives = [
     values.developmentBooks && values.developmentBooksEvidence,
     values.developmentCourses && values.developmentCoursesEvidence,
@@ -36,12 +38,14 @@ export function calculateScore(values) {
     WEIGHTS.revenue,
     (revenuePercentage / 100) * WEIGHTS.revenue,
   );
-  const hasDiscountValue = values.discountPercentage !== ''
-    && values.discountPercentage !== null
-    && values.discountPercentage !== undefined;
-  const discountPoints = hasDiscountValue && discountPercentage <= DISCOUNT_LIMITS[discountBand]
-    ? WEIGHTS.discount
-    : 0;
+  const hasIndicatorValue = isProfitability
+    ? values.profitabilityPercentage !== '' && values.profitabilityPercentage !== null && values.profitabilityPercentage !== undefined
+    : values.discountPercentage !== '' && values.discountPercentage !== null && values.discountPercentage !== undefined;
+  const indicatorPoints = !hasIndicatorValue
+    ? 0
+    : isProfitability
+      ? Math.min(WEIGHTS.indicator, (profitabilityPercentage / 100) * WEIGHTS.indicator)
+      : discountPercentage <= DISCOUNT_LIMITS[discountBand] ? WEIGHTS.indicator : 0;
   const developmentPoints = Math.min(
     WEIGHTS.development,
     (initiatives / 3) * WEIGHTS.development,
@@ -49,7 +53,7 @@ export function calculateScore(values) {
 
   const parts = {
     obzPoints: round2(obzPoints),
-    discountPoints: round2(discountPoints),
+    indicatorPoints: round2(indicatorPoints),
     revenuePoints: round2(revenuePoints),
     developmentPoints: round2(developmentPoints),
   };
@@ -66,7 +70,9 @@ export function validateMetrics(values) {
   const numericFields = [
     ['obzPercentage', 'Informe o atingimento do OBZ.'],
     ['revenuePercentage', 'Informe o atingimento do faturamento.'],
-    ['discountPercentage', 'Informe o percentual de desconto.'],
+    values.metricKind === 'profitability'
+      ? ['profitabilityPercentage', 'Informe o percentual de rentabilidade.']
+      : ['discountPercentage', 'Informe o percentual de desconto.'],
   ];
 
   numericFields.forEach(([field, requiredMessage]) => {
@@ -80,7 +86,7 @@ export function validateMetrics(values) {
     }
   });
 
-  if (!['A', 'B'].includes(values.discountBand)) {
+  if (values.metricKind !== 'profitability' && !['A', 'B'].includes(values.discountBand)) {
     errors.discountBand = 'Selecione uma faixa válida.';
   }
 

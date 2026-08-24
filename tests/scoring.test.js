@@ -20,7 +20,7 @@ const base = {
 test('calcula a pontuação máxima em 100 pontos', () => {
   assert.deepEqual(calculateScore(base), {
     obzPoints: 20,
-    discountPoints: 35,
+    indicatorPoints: 35,
     revenuePoints: 40,
     developmentPoints: 5,
     initiatives: 3,
@@ -43,17 +43,40 @@ test('pontuação fica limitada ao máximo quando metas são superadas', () => {
 });
 
 test('desconto no teto pontua e acima do teto não pontua na faixa A', () => {
-  assert.equal(calculateScore({ ...base, discountPercentage: 11.4 }).discountPoints, 35);
-  assert.equal(calculateScore({ ...base, discountPercentage: 11.41 }).discountPoints, 0);
+  assert.equal(calculateScore({ ...base, discountPercentage: 11.4 }).indicatorPoints, 35);
+  assert.equal(calculateScore({ ...base, discountPercentage: 11.41 }).indicatorPoints, 0);
 });
 
 test('desconto respeita o teto da faixa B', () => {
-  assert.equal(calculateScore({ ...base, discountBand: 'B', discountPercentage: 19.52 }).discountPoints, 35);
-  assert.equal(calculateScore({ ...base, discountBand: 'B', discountPercentage: 19.53 }).discountPoints, 0);
+  assert.equal(calculateScore({ ...base, discountBand: 'B', discountPercentage: 19.52 }).indicatorPoints, 35);
+  assert.equal(calculateScore({ ...base, discountBand: 'B', discountPercentage: 19.53 }).indicatorPoints, 0);
 });
 
 test('desconto vazio não concede pontos antes do preenchimento', () => {
-  assert.equal(calculateScore({ ...base, discountPercentage: '' }).discountPoints, 0);
+  assert.equal(calculateScore({ ...base, discountPercentage: '' }).indicatorPoints, 0);
+});
+
+test('rentabilidade pontua proporcionalmente até o máximo de 35 pontos', () => {
+  const score = calculateScore({
+    ...base,
+    metricKind: 'profitability',
+    profitabilityPercentage: 90,
+  });
+  assert.equal(score.indicatorPoints, 31.5);
+  assert.equal(score.totalPoints, 96.5);
+  assert.equal(calculateScore({ ...base, metricKind: 'profitability', profitabilityPercentage: 110 }).indicatorPoints, 35);
+});
+
+test('rentabilidade não exige os campos de desconto', () => {
+  const errors = validateMetrics({
+    ...base,
+    metricKind: 'profitability',
+    profitabilityPercentage: 80,
+    discountBand: 'C',
+    discountPercentage: '',
+  });
+  assert.equal(errors.discountBand, undefined);
+  assert.equal(errors.discountPercentage, undefined);
 });
 
 test('desenvolvimento pontua proporcionalmente e limita em três iniciativas', () => {
