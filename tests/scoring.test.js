@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   calculateDevelopmentScore,
   calculateScore,
+  PROFITABILITY_TARGETS,
   validateEvidenceFile,
   validateMetrics,
   validateSemesterDevelopment,
@@ -60,15 +61,19 @@ test('faixa vazia não concede seus pontos, sem remover os pontos da outra faixa
   assert.equal(calculateScore({ ...base, discount501To2000Percentage: '' }).indicatorPoints, 18);
 });
 
-test('rentabilidade pontua proporcionalmente até o máximo de 35 pontos', () => {
-  const score = calculateScore({
-    ...base,
-    metricKind: 'profitability',
-    profitabilityPercentage: 90,
-  });
-  assert.equal(score.indicatorPoints, 31.5);
-  assert.equal(score.totalPoints, 91.5);
-  assert.equal(calculateScore({ ...base, metricKind: 'profitability', profitabilityPercentage: 110 }).indicatorPoints, 35);
+test('rentabilidade da Exceleds só pontua a partir de 95% da meta e limita em 35 pontos', () => {
+  const common = { ...base, metricKind: 'profitability', profitabilityTarget: PROFITABILITY_TARGETS.exceleds };
+  assert.equal(calculateScore({ ...common, profitabilityPercentage: 68.3 }).indicatorPoints, 0);
+  assert.equal(calculateScore({ ...common, profitabilityPercentage: 68.31 }).indicatorPoints, 33.25);
+  assert.equal(calculateScore({ ...common, profitabilityPercentage: 71.9 }).indicatorPoints, 35);
+  assert.equal(calculateScore({ ...common, profitabilityPercentage: 80 }).indicatorPoints, 35);
+});
+
+test('rentabilidade da FOCO usa a meta própria para elegibilidade e pontos', () => {
+  const common = { ...base, metricKind: 'profitability', profitabilityTarget: PROFITABILITY_TARGETS.foco };
+  assert.equal(calculateScore({ ...common, profitabilityPercentage: 36.09 }).indicatorPoints, 0);
+  assert.equal(calculateScore({ ...common, profitabilityPercentage: 36.1 }).indicatorPoints, 33.25);
+  assert.equal(calculateScore({ ...common, profitabilityPercentage: 38 }).indicatorPoints, 35);
 });
 
 test('rentabilidade não exige os campos de desconto', () => {

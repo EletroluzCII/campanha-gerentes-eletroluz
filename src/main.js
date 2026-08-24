@@ -6,6 +6,7 @@ import {
   DISCOUNT_LIMITS,
   DISCOUNT_POINTS,
   EVIDENCE_RULES,
+  PROFITABILITY_TARGETS,
   validateEvidenceFile,
   validateMetrics,
   validateSemesterDevelopment,
@@ -43,7 +44,11 @@ const defaultCampaignPeriod = () => {
   const clamped = Math.min(12, Math.max(7, month));
   return `2026-${String(clamped).padStart(2, '0')}-01`;
 };
-const isProfitabilityBranch = () => ['Exceleds Iluminação', 'FOCO Distribuidora'].includes(state.profile?.display_name);
+const profitabilityTargetForBranch = (branchName) => ({
+  'Exceleds Iluminação': PROFITABILITY_TARGETS.exceleds,
+  'FOCO Distribuidora': PROFITABILITY_TARGETS.foco,
+}[branchName] || null);
+const isProfitabilityBranch = () => profitabilityTargetForBranch(state.profile?.display_name) !== null;
 const isTotalPeriod = () => state.selectedPeriod === TOTAL_PERIOD;
 const selectedPeriodDate = () => isTotalPeriod() ? null : state.selectedPeriod;
 const selectedPeriodLabel = () => isTotalPeriod()
@@ -56,6 +61,7 @@ const emptyMetrics = () => ({
   revenuePercentage: '',
   profitabilityPercentage: '',
   metricKind: 'discount',
+  profitabilityTarget: null,
   discountUnder500Percentage: '',
   discount501To2000Percentage: '',
 });
@@ -299,6 +305,13 @@ function discountBreakdown(score) {
   return `<small class="rule-note" id="discount-breakdown">Até R$ 500: ${formatPoints(score.discountUnder500Points)} / ${DISCOUNT_POINTS.under500} pts · R$ 501 a R$ 2.000: ${formatPoints(score.discount501To2000Points)} / ${DISCOUNT_POINTS.from501To2000} pts</small>`;
 }
 
+function profitabilityStatus(values = state.metrics) {
+  if (!hasMetricValue(values.profitabilityPercentage)) return 'Aguardando valor';
+  const target = Number(values.profitabilityTarget || 100);
+  if (Number(values.profitabilityPercentage) < target * 0.95) return 'Abaixo do mínimo';
+  return Number(values.profitabilityPercentage) >= target ? 'Meta atingida' : 'Em andamento';
+}
+
 function renderMetricsForm() {
   if (isTotalPeriod()) {
     const own = latestOwnRanking();
@@ -311,7 +324,7 @@ function renderMetricsForm() {
   const score = calculateScore(state.metrics);
   const isProfitability = state.metrics.metricKind === 'profitability';
   const indicatorStatus = isProfitability
-    ? state.metrics.profitabilityPercentage === '' ? 'Aguardando valor' : Number(state.metrics.profitabilityPercentage) >= 100 ? 'Meta atingida' : 'Em andamento'
+    ? profitabilityStatus()
     : discountStatus();
   return `<section class="section-block metrics-section">
     <div class="section-heading"><div><span class="eyebrow">${state.metrics.obzPercentage !== '' ? 'Lançamento mensal' : 'Novo lançamento'}</span><h2>Atualize suas métricas</h2><p>Dados de ${selectedPeriodLabel().toLowerCase()}. Um novo salvamento corrige este mesmo mês.</p></div><div class="period-total-actions">${periodControl()}<div class="total-chip"><span>Total previsto do mês</span><strong id="form-total">${formatPoints(score.totalPoints)} / 95 pts</strong></div></div></div>
@@ -331,7 +344,7 @@ function renderMetricsForm() {
         </article>
         <article class="metric-card">
           <div class="metric-head"><span class="metric-icon">${icon(isProfitability ? 'growth' : 'tag', 22)}</span><div><span>Indicador 3</span><h3>${isProfitability ? 'Rentabilidade' : 'Controle de descontos'}</h3></div><span class="weight">35%</span></div>
-          ${isProfitability ? `<p>Avalia a rentabilidade alcançada no mês em relação à meta.</p><div class="field-group"><label for="profitabilityPercentage">Rentabilidade (%)</label><div class="input-suffix"><input type="number" id="profitabilityPercentage" name="profitabilityPercentage" min="0" max="999.99" step="0.01" value="${state.metrics.profitabilityPercentage}" placeholder="Ex.: 92,5" aria-describedby="profitabilityPercentage-help profitabilityPercentage-error" /><span>%</span></div><small id="profitabilityPercentage-help">A pontuação é proporcional e atinge o máximo em 100%.</small>${fieldError('profitabilityPercentage')}</div>` : `<p>Informe o desconto aplicado em cada faixa. As metas são avaliadas de forma independente.</p><div class="two-fields"><div class="field-group"><label for="discountUnder500Percentage">Até R$ 500 · desconto (%)</label><div class="input-suffix"><input type="number" id="discountUnder500Percentage" name="discountUnder500Percentage" min="0" max="999.99" step="0.01" value="${state.metrics.discountUnder500Percentage}" placeholder="Ex.: 10,8" aria-describedby="discountUnder500Percentage-help discountUnder500Percentage-error" /><span>%</span></div><small id="discountUnder500Percentage-help">Meta: até ${formatPercentage(DISCOUNT_LIMITS.under500)} · vale ${DISCOUNT_POINTS.under500} pts.</small>${fieldError('discountUnder500Percentage')}</div><div class="field-group"><label for="discount501To2000Percentage">R$ 501 a R$ 2.000 · desconto (%)</label><div class="input-suffix"><input type="number" id="discount501To2000Percentage" name="discount501To2000Percentage" min="0" max="999.99" step="0.01" value="${state.metrics.discount501To2000Percentage}" placeholder="Ex.: 18,4" aria-describedby="discount501To2000Percentage-help discount501To2000Percentage-error" /><span>%</span></div><small id="discount501To2000Percentage-help">Meta: até ${formatPercentage(DISCOUNT_LIMITS.from501To2000)} · vale ${DISCOUNT_POINTS.from501To2000} pts.</small>${fieldError('discount501To2000Percentage')}</div></div>${discountBreakdown(score)}`}
+          ${isProfitability ? `<p>Avalia a rentabilidade alcançada no mês em relação à meta da filial.</p><div class="field-group"><label for="profitabilityPercentage">Rentabilidade (%)</label><div class="input-suffix"><input type="number" id="profitabilityPercentage" name="profitabilityPercentage" min="0" max="999.99" step="0.01" value="${state.metrics.profitabilityPercentage}" placeholder="Ex.: 68,5" aria-describedby="profitabilityPercentage-help profitabilityPercentage-error" /><span>%</span></div><small id="profitabilityPercentage-help">Meta: ${formatPercentage(state.metrics.profitabilityTarget)} · abaixo de ${formatPercentage(state.metrics.profitabilityTarget * 0.95)} não pontua. A pontuação é proporcional até a meta.</small>${fieldError('profitabilityPercentage')}</div>` : `<p>Informe o desconto aplicado em cada faixa. As metas são avaliadas de forma independente.</p><div class="two-fields"><div class="field-group"><label for="discountUnder500Percentage">Até R$ 500 · desconto (%)</label><div class="input-suffix"><input type="number" id="discountUnder500Percentage" name="discountUnder500Percentage" min="0" max="999.99" step="0.01" value="${state.metrics.discountUnder500Percentage}" placeholder="Ex.: 10,8" aria-describedby="discountUnder500Percentage-help discountUnder500Percentage-error" /><span>%</span></div><small id="discountUnder500Percentage-help">Meta: até ${formatPercentage(DISCOUNT_LIMITS.under500)} · vale ${DISCOUNT_POINTS.under500} pts.</small>${fieldError('discountUnder500Percentage')}</div><div class="field-group"><label for="discount501To2000Percentage">R$ 501 a R$ 2.000 · desconto (%)</label><div class="input-suffix"><input type="number" id="discount501To2000Percentage" name="discount501To2000Percentage" min="0" max="999.99" step="0.01" value="${state.metrics.discount501To2000Percentage}" placeholder="Ex.: 18,4" aria-describedby="discount501To2000Percentage-help discount501To2000Percentage-error" /><span>%</span></div><small id="discount501To2000Percentage-help">Meta: até ${formatPercentage(DISCOUNT_LIMITS.from501To2000)} · vale ${DISCOUNT_POINTS.from501To2000} pts.</small>${fieldError('discount501To2000Percentage')}</div></div>${discountBreakdown(score)}`}
           <div id="indicator-score">${scoreBadge(score.indicatorPoints, 35, indicatorStatus)}</div>
         </article>
       </div>
@@ -420,8 +433,9 @@ function renderAdminLatestTable() {
   if (!state.adminLatest.length) return renderEmpty('chart', 'Nenhuma métrica enviada', 'As métricas detalhadas aparecerão após o primeiro lançamento.');
   return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr><th>Filial</th><th>OBZ</th><th>Faturamento</th><th>Indicador 35%</th><th>Desenvolvimento</th><th>Total</th></tr></thead><tbody>${state.adminLatest.map((row) => {
     const profitability = row.metric_kind === 'profitability';
+    const profitabilityTarget = profitabilityTargetForBranch(row.branch_name);
     const indicator = profitability
-      ? `${formatPercentage(row.profitability_percentage)} <small>Rentabilidade</small>`
+      ? `${formatPercentage(row.profitability_percentage)} <small>Rentabilidade · meta ${formatPercentage(profitabilityTarget)}</small>`
       : `<strong>Até R$ 500: ${formatPercentage(row.discount_under_500_percentage)}</strong><small>${formatPoints(row.discount_under_500_points)} / ${DISCOUNT_POINTS.under500} pts</small><br /><strong>R$ 501 a R$ 2.000: ${formatPercentage(row.discount_501_to_2000_percentage)}</strong><small>${formatPoints(row.discount_501_to_2000_points)} / ${DISCOUNT_POINTS.from501To2000} pts</small>`;
     return `<tr><td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td><td data-label="OBZ">${formatPercentage(row.obz_percentage)}</td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)}</td><td data-label="${profitability ? 'Rentabilidade' : 'Desconto'}">${indicator}</td><td data-label="Desenvolvimento semestral">${isTotalPeriod() ? `${formatPoints(row.development_points)} / 5` : 'Ver quadro semestral'}</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong><small>${isTotalPeriod() ? `${row.periods_count} meses` : '/ 95 pts'}</small></td></tr>`;
   }).join('')}</tbody></table></div></div>`;
@@ -448,8 +462,9 @@ function renderHistoryTable() {
   return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr>${state.profile.role === 'admin' ? '<th>Filial</th>' : ''}<th>Período</th><th>Atualizado em</th><th>OBZ</th><th>Faturamento</th><th>Indicador 35%</th><th>Desenvolvimento</th><th>Comprovantes</th><th>Total</th></tr></thead><tbody>${state.history.map((row) => {
     const evidenceCount = Number(row.evidence_count || 0);
     const profitability = row.metric_kind === 'profitability';
+    const profitabilityTarget = profitabilityTargetForBranch(row.branch_name || state.profile.display_name);
     const indicator = profitability
-      ? `${formatPercentage(row.profitability_percentage)} <small>${formatPoints(row.profitability_points)} pts · Rentabilidade</small>`
+      ? `${formatPercentage(row.profitability_percentage)} <small>${formatPoints(row.profitability_points)} pts · Rentabilidade · meta ${formatPercentage(profitabilityTarget)}</small>`
       : `Até R$ 500: ${formatPercentage(row.discount_under_500_percentage)} <small>${formatPoints(row.discount_under_500_points)} / ${DISCOUNT_POINTS.under500} pts</small><br />R$ 501 a R$ 2.000: ${formatPercentage(row.discount_501_to_2000_percentage)} <small>${formatPoints(row.discount_501_to_2000_points)} / ${DISCOUNT_POINTS.from501To2000} pts</small>`;
     return `<tr>${state.profile.role === 'admin' ? `<td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td>` : ''}<td data-label="Período">${row.metric_period ? selectedPeriodName(row.metric_period) : '—'}</td><td data-label="Atualizado em">${formatDate(row.created_at)}</td><td data-label="OBZ">${formatPercentage(row.obz_percentage)} <small>${formatPoints(row.obz_points)} pts</small></td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)} <small>${formatPoints(row.revenue_points)} pts</small></td><td data-label="${profitability ? 'Rentabilidade' : 'Desconto'}">${indicator}</td><td data-label="Desenvolvimento">${formatPoints(row.development_points)} pts</td><td data-label="Comprovantes">${evidenceCount ? `<button type="button" class="button button-table" data-action="view-evidence" data-submission-id="${row.id}">${icon('eye', 16)} Ver ${evidenceCount}</button>` : '<span class="muted-text">Nenhum</span>'}</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong></td></tr>`;
   }).join('')}</tbody></table></div></div>`;
@@ -526,7 +541,7 @@ async function loadDashboardData() {
     state.adminSemesterDevelopment = await appService.getAdminSemesterDevelopment();
     return;
   }
-  state.metrics = { ...emptyMetrics(), metricKind: isProfitabilityBranch() ? 'profitability' : 'discount', metricPeriod: state.selectedPeriod };
+  state.metrics = { ...emptyMetrics(), metricKind: isProfitabilityBranch() ? 'profitability' : 'discount', profitabilityTarget: profitabilityTargetForBranch(state.profile.display_name), metricPeriod: state.selectedPeriod };
   state.semesterDevelopment = emptySemesterDevelopment();
   state.semesterEvidenceFiles = emptyEvidenceFiles();
   state.existingSemesterEvidence = [];
@@ -578,7 +593,7 @@ function updateMetricPreview() {
   set('#revenue-score', scoreBadge(score.revenuePoints, 40, Number(state.metrics.revenuePercentage) >= 100 ? 'Meta atingida' : 'Em andamento'));
   const isProfitability = state.metrics.metricKind === 'profitability';
   const indicatorStatus = isProfitability
-    ? state.metrics.profitabilityPercentage === '' ? 'Aguardando valor' : Number(state.metrics.profitabilityPercentage) >= 100 ? 'Meta atingida' : 'Em andamento'
+    ? profitabilityStatus()
     : discountStatus();
   set('#indicator-score', scoreBadge(score.indicatorPoints, 35, indicatorStatus));
   if (!isProfitability) set('#discount-breakdown', `Até R$ 500: ${formatPoints(score.discountUnder500Points)} / ${DISCOUNT_POINTS.under500} pts · R$ 501 a R$ 2.000: ${formatPoints(score.discount501To2000Points)} / ${DISCOUNT_POINTS.from501To2000} pts`);
@@ -927,6 +942,7 @@ document.addEventListener('click', async (event) => {
       Faturamento: row.revenue_percentage,
       Indicador: row.metric_kind === 'profitability' ? 'Rentabilidade' : 'Desconto',
       Rentabilidade: row.profitability_percentage,
+      Meta_rentabilidade: row.metric_kind === 'profitability' ? profitabilityTargetForBranch(row.branch_name) : null,
       Desconto_ate_R_500: row.discount_under_500_percentage,
       Pontos_desconto_ate_R_500: row.discount_under_500_points,
       Desconto_R_501_a_R_2000: row.discount_501_to_2000_percentage,
@@ -948,6 +964,7 @@ document.addEventListener('click', async (event) => {
       Indicador: row.metric_kind === 'profitability' ? 'Rentabilidade' : 'Desconto',
       Rentabilidade_percentual: row.profitability_percentage,
       Rentabilidade_pontos: row.profitability_points,
+      Meta_rentabilidade: row.metric_kind === 'profitability' ? profitabilityTargetForBranch(row.branch_name || state.profile.display_name) : null,
       Desconto_ate_R_500_percentual: row.discount_under_500_percentage,
       Desconto_ate_R_500_pontos: row.discount_under_500_points,
       Desconto_R_501_a_R_2000_percentual: row.discount_501_to_2000_percentage,

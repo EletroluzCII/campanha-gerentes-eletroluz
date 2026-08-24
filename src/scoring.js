@@ -15,6 +15,11 @@ export const DISCOUNT_POINTS = Object.freeze({
   from501To2000: 17,
 });
 
+export const PROFITABILITY_TARGETS = Object.freeze({
+  exceleds: 71.9,
+  foco: 38,
+});
+
 export const EVIDENCE_RULES = Object.freeze({
   maxSizeBytes: 10 * 1024 * 1024,
   acceptedTypes: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
@@ -26,6 +31,7 @@ export function calculateScore(values) {
   const obzPercentage = Number(values.obzPercentage || 0);
   const revenuePercentage = Number(values.revenuePercentage || 0);
   const profitabilityPercentage = Number(values.profitabilityPercentage || 0);
+  const profitabilityTarget = Number(values.profitabilityTarget || 100);
   const discountUnder500Percentage = Number(values.discountUnder500Percentage || 0);
   const discount501To2000Percentage = Number(values.discount501To2000Percentage || 0);
   const isProfitability = values.metricKind === 'profitability';
@@ -48,7 +54,9 @@ export function calculateScore(values) {
   const indicatorPoints = isProfitability
     ? !hasProfitabilityValue
       ? 0
-      : Math.min(WEIGHTS.indicator, (profitabilityPercentage / 100) * WEIGHTS.indicator)
+      : profitabilityPercentage < profitabilityTarget * 0.95
+        ? 0
+        : Math.min(WEIGHTS.indicator, (profitabilityPercentage / profitabilityTarget) * WEIGHTS.indicator)
     : discountUnder500Points + discount501To2000Points;
   const parts = {
     obzPoints: round2(obzPoints),
