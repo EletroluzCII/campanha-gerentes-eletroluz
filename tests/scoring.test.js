@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateScore, validateEvidenceFile, validateMetrics } from '../src/scoring.js';
+import {
+  calculateDevelopmentScore,
+  calculateScore,
+  validateEvidenceFile,
+  validateMetrics,
+  validateSemesterDevelopment,
+} from '../src/scoring.js';
 
 const base = {
   obzPercentage: 100,
@@ -17,14 +23,12 @@ const base = {
   developmentEventsEvidence: false,
 };
 
-test('calcula a pontuação máxima em 100 pontos', () => {
+test('calcula a pontuação operacional máxima em 95 pontos', () => {
   assert.deepEqual(calculateScore(base), {
     obzPoints: 20,
     indicatorPoints: 35,
     revenuePoints: 40,
-    developmentPoints: 5,
-    initiatives: 3,
-    totalPoints: 100,
+    totalPoints: 95,
   });
 });
 
@@ -63,7 +67,7 @@ test('rentabilidade pontua proporcionalmente até o máximo de 35 pontos', () =>
     profitabilityPercentage: 90,
   });
   assert.equal(score.indicatorPoints, 31.5);
-  assert.equal(score.totalPoints, 96.5);
+  assert.equal(score.totalPoints, 91.5);
   assert.equal(calculateScore({ ...base, metricKind: 'profitability', profitabilityPercentage: 110 }).indicatorPoints, 35);
 });
 
@@ -80,12 +84,12 @@ test('rentabilidade não exige os campos de desconto', () => {
 });
 
 test('desenvolvimento pontua proporcionalmente e limita em três iniciativas', () => {
-  assert.equal(calculateScore({ ...base, developmentCourses: false, developmentCertifications: false }).developmentPoints, 1.67);
-  assert.equal(calculateScore({ ...base, developmentEvents: true, developmentEventsEvidence: true }).developmentPoints, 5);
+  assert.equal(calculateDevelopmentScore({ ...base, developmentCourses: false, developmentCertifications: false }).developmentPoints, 1.67);
+  assert.equal(calculateDevelopmentScore({ ...base, developmentEvents: true, developmentEventsEvidence: true }).developmentPoints, 5);
 });
 
 test('iniciativa selecionada sem comprovante não pontua', () => {
-  const score = calculateScore({
+  const score = calculateDevelopmentScore({
     ...base,
     developmentBooksEvidence: false,
     developmentCoursesEvidence: false,
@@ -96,7 +100,7 @@ test('iniciativa selecionada sem comprovante não pontua', () => {
 });
 
 test('validação exige comprovante para toda iniciativa selecionada', () => {
-  const errors = validateMetrics({ ...base, developmentBooksEvidence: false });
+  const errors = validateSemesterDevelopment({ ...base, developmentBooksEvidence: false });
   assert.equal(errors.developmentBooksEvidence, 'Anexe um comprovante do livro.');
 });
 

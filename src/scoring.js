@@ -24,13 +24,6 @@ export function calculateScore(values) {
   const discountPercentage = Number(values.discountPercentage || 0);
   const discountBand = values.discountBand === 'B' ? 'B' : 'A';
   const isProfitability = values.metricKind === 'profitability';
-  const initiatives = [
-    values.developmentBooks && values.developmentBooksEvidence,
-    values.developmentCourses && values.developmentCoursesEvidence,
-    values.developmentCertifications && values.developmentCertificationsEvidence,
-    values.developmentEvents && values.developmentEventsEvidence,
-  ].filter(Boolean).length;
-
   const obzPoints = obzPercentage < 95
     ? 0
     : Math.min(WEIGHTS.obz, (obzPercentage / 100) * WEIGHTS.obz);
@@ -46,22 +39,31 @@ export function calculateScore(values) {
     : isProfitability
       ? Math.min(WEIGHTS.indicator, (profitabilityPercentage / 100) * WEIGHTS.indicator)
       : discountPercentage <= DISCOUNT_LIMITS[discountBand] ? WEIGHTS.indicator : 0;
-  const developmentPoints = Math.min(
-    WEIGHTS.development,
-    (initiatives / 3) * WEIGHTS.development,
-  );
-
   const parts = {
     obzPoints: round2(obzPoints),
     indicatorPoints: round2(indicatorPoints),
     revenuePoints: round2(revenuePoints),
-    developmentPoints: round2(developmentPoints),
   };
 
   return {
     ...parts,
-    initiatives,
     totalPoints: round2(Object.values(parts).reduce((sum, item) => sum + item, 0)),
+  };
+}
+
+export function calculateDevelopmentScore(values) {
+  const initiatives = [
+    values.developmentBooks && values.developmentBooksEvidence,
+    values.developmentCourses && values.developmentCoursesEvidence,
+    values.developmentCertifications && values.developmentCertificationsEvidence,
+    values.developmentEvents && values.developmentEventsEvidence,
+  ].filter(Boolean).length;
+  return {
+    initiatives,
+    developmentPoints: round2(Math.min(
+      WEIGHTS.development,
+      (initiatives / 3) * WEIGHTS.development,
+    )),
   };
 }
 
@@ -90,6 +92,11 @@ export function validateMetrics(values) {
     errors.discountBand = 'Selecione uma faixa válida.';
   }
 
+  return errors;
+}
+
+export function validateSemesterDevelopment(values) {
+  const errors = {};
   [
     ['developmentBooks', 'developmentBooksEvidence', 'Anexe um comprovante do livro.'],
     ['developmentCourses', 'developmentCoursesEvidence', 'Anexe um comprovante do curso.'],

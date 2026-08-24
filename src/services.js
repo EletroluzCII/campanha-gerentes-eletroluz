@@ -5,7 +5,7 @@ import {
   demoProfile,
   demoRanking,
 } from './demo-data.js';
-import { calculateScore } from './scoring.js';
+import { calculateDevelopmentScore, calculateScore } from './scoring.js';
 import { hasSupabaseConfig, supabase, usernameToEmail } from './supabase.js';
 
 const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -33,6 +33,19 @@ const extensionByType = {
 };
 
 const EVIDENCE_BUCKET = 'campaign-gerentes-2026-evidence';
+let demoSemesterDevelopment = {
+  id: 'demo-semester-development',
+  development_books: true,
+  development_courses: true,
+  development_certifications: false,
+  development_events: false,
+  development_points: 3.33,
+  updated_at: '2026-08-20T14:00:00.000Z',
+  semester_development_evidence: [
+    { category: 'books', original_name: 'livro-demo.jpg', mime_type: 'image/jpeg', size_bytes: 150000 },
+    { category: 'courses', original_name: 'curso-demo.pdf', mime_type: 'application/pdf', size_bytes: 220000 },
+  ],
+};
 
 const assertNoError = ({ data, error }) => {
   if (error) throw error;
@@ -125,6 +138,27 @@ export const appService = {
     return data ? flattenSubmission(data) : null;
   },
 
+  async getSemesterDevelopment() {
+    if (isDemo) return structuredClone(demoSemesterDevelopment);
+    return assertNoError(await supabase
+      .from('semester_development')
+      .select('*, semester_development_evidence(id, category, storage_path, original_name, mime_type, size_bytes)')
+      .maybeSingle());
+  },
+
+  async getAdminSemesterDevelopment() {
+    if (isDemo) return demoRanking.map((row, index) => ({
+      development_id: index === 0 ? demoSemesterDevelopment.id : null,
+      branch_id: row.branch_id,
+      branch_name: row.branch_name,
+      development_points: index === 0 ? demoSemesterDevelopment.development_points : null,
+      initiatives: index === 0 ? 2 : 0,
+      evidence_count: index === 0 ? 2 : 0,
+      updated_at: index === 0 ? demoSemesterDevelopment.updated_at : null,
+    }));
+    return assertNoError(await supabase.rpc('get_admin_semester_development'));
+  },
+
   async getEvidence(submissionId) {
     if (isDemo) {
       const adminMatch = submissionId.match(/^admin-history-(\d+)$/);
@@ -147,6 +181,21 @@ export const appService = {
     }));
   },
 
+  async getSemesterEvidence(developmentId) {
+    if (isDemo) return [];
+    const items = assertNoError(await supabase
+      .from('semester_development_evidence')
+      .select('id, category, storage_path, original_name, mime_type, size_bytes, created_at')
+      .eq('development_id', developmentId)
+      .order('category'));
+    return Promise.all(items.map(async (item) => {
+      const { data, error } = await supabase.storage
+        .from(EVIDENCE_BUCKET)
+        .createSignedUrl(item.storage_path, 120);
+      return { ...item, signed_url: error ? null : data.signedUrl };
+    }));
+  },
+
   async getBranches() {
     if (isDemo) return demoRanking.map((row) => ({ id: row.branch_id, name: row.branch_name }));
     return assertNoError(await supabase
@@ -156,22 +205,12 @@ export const appService = {
       .order('display_order'));
   },
 
-  async submitMetrics(values, evidenceFiles = {}, existingEvidence = [], onProgress = () => {}) {
+  async submitMetrics(values, onProgress = () => {}) {
     const score = calculateScore(values);
     if (isDemo) {
       const now = new Date().toISOString();
       const submissionId = `demo-${Date.now()}`;
-      const evidence = evidenceFields
-        .filter(([, field]) => values[field] && evidenceFiles[field])
-        .map(([category, field]) => ({
-          category,
-          original_name: evidenceFiles[field].name,
-          mime_type: evidenceFiles[field].type,
-          size_bytes: evidenceFiles[field].size,
-          signed_url: URL.createObjectURL(evidenceFiles[field]),
-        }));
-      demoEvidenceBySubmission.set(submissionId, evidence);
-      onProgress({ completed: evidence.length, total: evidence.length, stage: 'saving' });
+      onProgress({ completed: 0, total: 0, stage: 'saving' });
       const record = {
         id: submissionId,
         branch_id: 'demo-1',
@@ -187,13 +226,13 @@ export const appService = {
         discount_points: values.metricKind === 'profitability' ? null : score.indicatorPoints,
         profitability_percentage: values.metricKind === 'profitability' ? Number(values.profitabilityPercentage) : null,
         profitability_points: values.metricKind === 'profitability' ? score.indicatorPoints : null,
-        development_books: values.developmentBooks,
-        development_courses: values.developmentCourses,
-        development_certifications: values.developmentCertifications,
-        development_events: values.developmentEvents,
-        development_points: score.developmentPoints,
+        development_books: false,
+        development_courses: false,
+        development_certifications: false,
+        development_events: false,
+        development_points: 0,
         total_points: score.totalPoints,
-        evidence_count: evidence.length,
+        evidence_count: 0,
         created_at: now,
       };
       const index = demoHistory.findIndex((item) => item.metric_period === values.metricPeriod);
@@ -204,12 +243,42 @@ export const appService = {
       return { id: submissionId, ...score };
     }
 
+    onProgress({ completed: 0, total: 0, stage: 'saving' });
+    return assertNoError(await supabase.rpc('submit_metrics', {
+      p_metric_period: values.metricPeriod,
+      p_obz_percentage: Number(values.obzPercentage),
+      p_revenue_percentage: Number(values.revenuePercentage),
+      p_discount_band: values.metricKind === 'profitability' ? null : values.discountBand,
+      p_discount_percentage: values.metricKind === 'profitability' ? null : Number(values.discountPercentage),
+      p_profitability_percentage: values.metricKind === 'profitability' ? Number(values.profitabilityPercentage) : null,
+      p_development_books: false,
+      p_development_courses: false,
+      p_development_certifications: false,
+      p_development_events: false,
+      p_evidence: [],
+    }));
+  },
+
+  async submitSemesterDevelopment(values, evidenceFiles = {}, existingEvidence = [], onProgress = () => {}) {
+    const score = calculateDevelopmentScore(values);
+    if (isDemo) {
+      demoSemesterDevelopment = {
+        ...demoSemesterDevelopment,
+        development_books: Boolean(values.developmentBooks),
+        development_courses: Boolean(values.developmentCourses),
+        development_certifications: Boolean(values.developmentCertifications),
+        development_events: Boolean(values.developmentEvents),
+        development_points: score.developmentPoints,
+        updated_at: new Date().toISOString(),
+      };
+      onProgress({ completed: 0, total: 0, stage: 'saving' });
+      return demoSemesterDevelopment;
+    }
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData.user) throw userError || new Error('Sessão expirada.');
-
     const selectedEvidence = evidenceFields
       .filter(([, field]) => values[field] && evidenceFiles[field])
-      .map(([category, field]) => ({ category, field, file: evidenceFiles[field] }));
+      .map(([category, field]) => ({ category, file: evidenceFiles[field] }));
     const batchId = crypto.randomUUID();
     const uploadedPaths = [];
     const evidencePayload = existingEvidence
@@ -217,45 +286,20 @@ export const appService = {
         const mapped = evidenceFields.find(([category]) => category === item.category);
         return mapped && values[mapped[1]] && !selectedEvidence.some(({ category }) => category === item.category);
       })
-      .map((item) => ({
-      category: item.category,
-      storage_path: item.storage_path,
-      original_name: item.original_name,
-      mime_type: item.mime_type,
-      size_bytes: item.size_bytes,
-      }));
-
+      .map((item) => ({ category: item.category, storage_path: item.storage_path, original_name: item.original_name, mime_type: item.mime_type, size_bytes: item.size_bytes }));
     try {
       for (let index = 0; index < selectedEvidence.length; index += 1) {
         const { category, file } = selectedEvidence[index];
-        const extension = extensionByType[file.type];
-        const path = `${userData.user.id}/${batchId}/${category}/${crypto.randomUUID()}.${extension}`;
+        const path = `${userData.user.id}/${batchId}/semester-development/${category}/${crypto.randomUUID()}.${extensionByType[file.type]}`;
         onProgress({ completed: index, total: selectedEvidence.length, stage: 'uploading' });
-        const { error } = await supabase.storage.from(EVIDENCE_BUCKET).upload(path, file, {
-          cacheControl: '3600',
-          contentType: file.type,
-          upsert: false,
-        });
+        const { error } = await supabase.storage.from(EVIDENCE_BUCKET).upload(path, file, { cacheControl: '3600', contentType: file.type, upsert: false });
         if (error) throw error;
         uploadedPaths.push(path);
-        evidencePayload.push({
-          category,
-          storage_path: path,
-          original_name: file.name,
-          mime_type: file.type,
-          size_bytes: file.size,
-        });
+        evidencePayload.push({ category, storage_path: path, original_name: file.name, mime_type: file.type, size_bytes: file.size });
         onProgress({ completed: index + 1, total: selectedEvidence.length, stage: 'uploading' });
       }
-
       onProgress({ completed: selectedEvidence.length, total: selectedEvidence.length, stage: 'saving' });
-      return assertNoError(await supabase.rpc('submit_metrics', {
-        p_metric_period: values.metricPeriod,
-        p_obz_percentage: Number(values.obzPercentage),
-        p_revenue_percentage: Number(values.revenuePercentage),
-        p_discount_band: values.metricKind === 'profitability' ? null : values.discountBand,
-        p_discount_percentage: values.metricKind === 'profitability' ? null : Number(values.discountPercentage),
-        p_profitability_percentage: values.metricKind === 'profitability' ? Number(values.profitabilityPercentage) : null,
+      return assertNoError(await supabase.rpc('submit_semester_development', {
         p_development_books: Boolean(values.developmentBooks),
         p_development_courses: Boolean(values.developmentCourses),
         p_development_certifications: Boolean(values.developmentCertifications),
@@ -263,9 +307,7 @@ export const appService = {
         p_evidence: evidencePayload,
       }));
     } catch (error) {
-      if (uploadedPaths.length) {
-        await supabase.storage.from(EVIDENCE_BUCKET).remove(uploadedPaths);
-      }
+      if (uploadedPaths.length) await supabase.storage.from(EVIDENCE_BUCKET).remove(uploadedPaths);
       throw error;
     }
   },

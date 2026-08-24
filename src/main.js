@@ -1,11 +1,13 @@
 import './styles.css';
 import { icon } from './icons.js';
 import {
+  calculateDevelopmentScore,
   calculateScore,
   DISCOUNT_LIMITS,
   EVIDENCE_RULES,
   validateEvidenceFile,
   validateMetrics,
+  validateSemesterDevelopment,
 } from './scoring.js';
 import { appService } from './services.js';
 import {
@@ -55,6 +57,9 @@ const emptyMetrics = () => ({
   metricKind: 'discount',
   discountBand: 'A',
   discountPercentage: '',
+});
+
+const emptySemesterDevelopment = () => ({
   developmentBooks: false,
   developmentBooksEvidence: false,
   developmentCourses: false,
@@ -77,8 +82,10 @@ const state = {
   adminLatest: [],
   branches: [],
   metrics: emptyMetrics(),
-  evidenceFiles: emptyEvidenceFiles(),
-  existingEvidence: [],
+  semesterDevelopment: emptySemesterDevelopment(),
+  semesterEvidenceFiles: emptyEvidenceFiles(),
+  existingSemesterEvidence: [],
+  adminSemesterDevelopment: [],
   selectedPeriod: defaultCampaignPeriod(),
   errors: {},
   loading: false,
@@ -246,7 +253,7 @@ function renderManagerDashboard(content) {
     ${appService.isDemo ? '<div class="demo-banner" role="status">Modo de demonstração local — nenhum dado real será gravado.</div>' : ''}
     <section class="manager-hero" aria-label="Resumo do desempenho">
       <div class="score-overview">
-        <span>${isTotalPeriod() ? 'Sua média atual' : 'Sua pontuação do mês'}</span><strong>${scoreText}</strong>
+        <span>${isTotalPeriod() ? 'Sua média atual' : 'Sua pontuação do mês (até 95)'}</span><strong>${scoreText}</strong>
         <div class="progress-track" aria-label="${progress}% da pontuação máxima"><span style="width:${progress}%"></span></div>
         <small>${own?.updated_at ? `${isTotalPeriod() ? `${own.periods_count} meses preenchidos · ` : ''}Atualizado em ${formatDate(own.updated_at)}` : 'Envie suas primeiras métricas para entrar no ranking.'}</small>
       </div>
@@ -254,13 +261,14 @@ function renderManagerDashboard(content) {
       <div class="hero-mark" aria-hidden="true">${icon('trophy', 120)}</div>
     </section>
     <section class="summary-grid" aria-label="Resumo da campanha">
-      ${summaryCard('Pontuação máxima', '100 pts', 'Quatro indicadores', 'target')}
+      ${summaryCard('Resultado final', '100 pts', '95 mensais + 5 semestrais', 'target')}
       ${summaryCard('Filiais com dados', `${completed} de 12`, `${12 - completed} ainda sem envio em ${selectedPeriodLabel().toLowerCase()}`, 'users')}
       ${summaryCard('Última atualização', own?.updated_at ? formatDate(own.updated_at, false) : '—', own?.updated_at ? formatDate(own.updated_at).split(' ')[1] || '' : 'Nenhum envio', 'history')}
     </section>
     ${renderMetricsForm()}
+    ${renderSemesterDevelopment()}
     <section class="section-block">
-      <div class="section-heading"><div><span class="eyebrow">Classificação</span><h2>Ranking das filiais</h2><p>${isTotalPeriod() ? 'O ranking considera a média dos meses preenchidos por cada unidade.' : `O ranking considera os resultados de ${selectedPeriodLabel().toLowerCase()}.`}</p></div><button class="button button-secondary" data-action="refresh-ranking">${icon('refresh', 18)} Atualizar</button></div>
+      <div class="section-heading"><div><span class="eyebrow">Classificação</span><h2>Ranking das filiais</h2><p>${isTotalPeriod() ? 'O ranking considera a média mensal e acrescenta o Desenvolvimento Pessoal uma única vez.' : `O ranking considera os resultados operacionais de ${selectedPeriodLabel().toLowerCase()}, até 95 pontos.`}</p></div><button class="button button-secondary" data-action="refresh-ranking">${icon('refresh', 18)} Atualizar</button></div>
       ${renderRankingTable()}
     </section>`;
 }
@@ -277,8 +285,8 @@ function renderMetricsForm() {
   if (isTotalPeriod()) {
     const own = latestOwnRanking();
     return `<section class="section-block metrics-section">
-      <div class="section-heading"><div><span class="eyebrow">Visão consolidada</span><h2>Média das métricas</h2><p>Selecione um mês no filtro para preencher ou corrigir os dados da filial.</p></div><div class="period-total-actions">${periodControl()}<div class="total-chip"><span>Média atual</span><strong>${own?.total_points === null || !own ? 'Sem dados' : `${formatPoints(own.total_points)} pts`}</strong></div></div></div>
-      <div class="period-readonly" role="status">${icon('chart', 22)}<div><strong>Modo de consulta</strong><span>A opção Total considera somente os ${own?.periods_count || 0} meses preenchidos; meses sem lançamento não entram na média.</span></div></div>
+      <div class="section-heading"><div><span class="eyebrow">Visão consolidada</span><h2>Média das métricas</h2><p>Selecione um mês no filtro para preencher ou corrigir os dados da filial.</p></div><div class="period-total-actions">${periodControl()}<div class="total-chip"><span>Resultado Total</span><strong>${own?.total_points === null || !own ? 'Sem dados' : `${formatPoints(own.total_points)} pts`}</strong></div></div></div>
+      <div class="period-readonly" role="status">${icon('chart', 22)}<div><strong>Média mensal + Desenvolvimento semestral</strong><span>A opção Total considera somente os ${own?.periods_count || 0} meses preenchidos (até 95 pontos) e acrescenta os ${formatPoints(calculateDevelopmentScore(state.semesterDevelopment).developmentPoints)} pontos de Desenvolvimento Pessoal uma única vez.</span></div></div>
     </section>`;
   }
 
@@ -290,7 +298,7 @@ function renderMetricsForm() {
     ? 'Aguardando valor'
     : Number(state.metrics.discountPercentage) <= DISCOUNT_LIMITS[state.metrics.discountBand] ? 'Dentro do teto' : 'Acima do teto';
   return `<section class="section-block metrics-section">
-    <div class="section-heading"><div><span class="eyebrow">${state.existingEvidence.length || state.metrics.obzPercentage !== '' ? 'Lançamento mensal' : 'Novo lançamento'}</span><h2>Atualize suas métricas</h2><p>Dados de ${selectedPeriodLabel().toLowerCase()}. Um novo salvamento corrige este mesmo mês.</p></div><div class="period-total-actions">${periodControl()}<div class="total-chip"><span>Total previsto</span><strong id="form-total">${formatPoints(score.totalPoints)} pts</strong></div></div></div>
+    <div class="section-heading"><div><span class="eyebrow">${state.metrics.obzPercentage !== '' ? 'Lançamento mensal' : 'Novo lançamento'}</span><h2>Atualize suas métricas</h2><p>Dados de ${selectedPeriodLabel().toLowerCase()}. Um novo salvamento corrige este mesmo mês.</p></div><div class="period-total-actions">${periodControl()}<div class="total-chip"><span>Total previsto do mês</span><strong id="form-total">${formatPoints(score.totalPoints)} / 95 pts</strong></div></div></div>
     <form id="metrics-form" novalidate>
       <div class="metrics-grid">
         <article class="metric-card">
@@ -310,35 +318,39 @@ function renderMetricsForm() {
           ${isProfitability ? `<p>Avalia a rentabilidade alcançada no mês em relação à meta.</p><div class="field-group"><label for="profitabilityPercentage">Rentabilidade (%)</label><div class="input-suffix"><input type="number" id="profitabilityPercentage" name="profitabilityPercentage" min="0" max="999.99" step="0.01" value="${state.metrics.profitabilityPercentage}" placeholder="Ex.: 92,5" aria-describedby="profitabilityPercentage-help profitabilityPercentage-error" /><span>%</span></div><small id="profitabilityPercentage-help">A pontuação é proporcional e atinge o máximo em 100%.</small>${fieldError('profitabilityPercentage')}</div>` : `<p>Reconhece negociações que preservam a margem da filial.</p><div class="two-fields"><div class="field-group"><label for="discountBand">Faixa de venda</label><select id="discountBand" name="discountBand"><option value="A" ${state.metrics.discountBand === 'A' ? 'selected' : ''}>Até R$ 500 mil</option><option value="B" ${state.metrics.discountBand === 'B' ? 'selected' : ''}>R$ 501 mil a R$ 2 milhões</option></select>${fieldError('discountBand')}</div><div class="field-group"><label for="discountPercentage">Desconto atual (%)</label><div class="input-suffix"><input type="number" id="discountPercentage" name="discountPercentage" min="0" max="999.99" step="0.01" value="${state.metrics.discountPercentage}" placeholder="Ex.: 10,8" aria-describedby="discountPercentage-error" /><span>%</span></div>${fieldError('discountPercentage')}</div></div><small class="rule-note" id="discount-limit">Teto atual: ${formatPercentage(DISCOUNT_LIMITS[state.metrics.discountBand])}</small>`}
           <div id="indicator-score">${scoreBadge(score.indicatorPoints, 35, indicatorStatus)}</div>
         </article>
-        <article class="metric-card">
-          <div class="metric-head"><span class="metric-icon">${icon('book', 22)}</span><div><span>Indicador 4</span><h3>Desenvolvimento pessoal</h3></div><span class="weight">5%</span></div>
-          <p>Marque as iniciativas e anexe um comprovante para cada uma. A meta é completar três.</p>
-          <fieldset class="check-grid"><legend class="sr-only">Iniciativas concluídas</legend>
-            ${DEVELOPMENT_ITEMS.map(developmentCheck).join('')}
-          </fieldset>
-          <div id="development-score">${scoreBadge(score.developmentPoints, 5, `${score.initiatives} de 3 comprovadas`)}</div>
-        </article>
       </div>
-      <div class="form-submit-bar"><div><span>Pontuação prevista</span><strong id="submit-total">${formatPoints(score.totalPoints)} <small>/ 100 pts</small></strong></div><button class="button button-primary" type="submit">${icon('save', 18)} ${state.existingEvidence.length || state.metrics.obzPercentage !== '' ? 'Revisar e atualizar' : 'Revisar e salvar'}</button></div>
+      <div class="form-submit-bar"><div><span>Pontuação prevista do mês</span><strong id="submit-total">${formatPoints(score.totalPoints)} <small>/ 95 pts</small></strong></div><button class="button button-primary" type="submit">${icon('save', 18)} ${state.metrics.obzPercentage !== '' ? 'Revisar e atualizar' : 'Revisar e salvar'}</button></div>
     </form>
   </section>`;
 }
 
-function developmentCheck(item) {
-  const selected = state.metrics[item.field];
-  const file = state.evidenceFiles[item.field];
-  const existingFile = state.existingEvidence.find((entry) => entry.category === item.category);
+function renderSemesterDevelopment() {
+  const score = calculateDevelopmentScore(state.semesterDevelopment);
+  return `<section class="section-block semester-development-section">
+    <div class="section-heading"><div><span class="eyebrow">Indicador semestral · Julho a Dezembro</span><h2>Desenvolvimento pessoal</h2><p>Esta pontuação é registrada uma única vez para todo o semestre e entra integralmente no resultado Total. Ela não se repete em cada mês.</p></div><div class="total-chip semester-chip"><span>Pontuação semestral</span><strong id="semester-total">${formatPoints(score.developmentPoints)} / 5 pts</strong></div></div>
+    <form id="semester-development-form" novalidate>
+      <div class="semester-notice" role="status">${icon('history', 20)}<span>Complete até três iniciativas comprovadas. Você pode revisar este mesmo registro durante o semestre.</span></div>
+      <fieldset class="check-grid"><legend class="sr-only">Iniciativas semestrais concluídas</legend>${DEVELOPMENT_ITEMS.map(semesterDevelopmentCheck).join('')}</fieldset>
+      <div class="form-submit-bar"><div><span>Iniciativas comprovadas</span><strong id="semester-initiatives">${score.initiatives} <small>de 3 para a pontuação máxima</small></strong></div><button class="button button-primary" type="submit">${icon('save', 18)} ${state.existingSemesterEvidence.length ? 'Revisar e atualizar' : 'Salvar desenvolvimento semestral'}</button></div>
+    </form>
+  </section>`;
+}
+
+function semesterDevelopmentCheck(item) {
+  const selected = state.semesterDevelopment[item.field];
+  const file = state.semesterEvidenceFiles[item.field];
+  const existingFile = state.existingSemesterEvidence.find((entry) => entry.category === item.category);
   const evidenceLabel = file || existingFile;
-  const inputId = `evidence-${item.category}`;
+  const inputId = `semester-evidence-${item.category}`;
   const accept = EVIDENCE_RULES.acceptedTypes.join(',');
   return `<div class="development-option ${selected ? 'is-selected' : ''} ${evidenceLabel ? 'has-file' : ''}">
     <label class="check-option"><input type="checkbox" name="${item.field}" ${selected ? 'checked' : ''} /><span class="custom-check">${icon('check', 15)}</span><span><strong><span class="development-emoji" aria-hidden="true">${item.emoji}</span> ${item.title}</strong><small>${item.description}</small></span></label>
     ${selected ? `<div class="evidence-upload">
       <div class="evidence-heading"><span>Comprovante obrigatório</span><small>${file ? 'Arquivo pronto para envio' : existingFile ? 'Comprovante já salvo' : 'Ainda não anexado'}</small></div>
-      <input class="evidence-input" type="file" id="${inputId}" data-evidence-for="${item.field}" accept="${accept}" aria-describedby="${item.evidenceField}-help ${item.evidenceField}-error" />
+      <input class="evidence-input" type="file" id="${inputId}" data-semester-evidence-for="${item.field}" accept="${accept}" aria-describedby="${item.evidenceField}-help ${item.evidenceField}-error" />
       <label class="evidence-picker" for="${inputId}">${icon('download', 17)} ${evidenceLabel ? 'Substituir arquivo' : 'Selecionar arquivo'}</label>
       <small id="${item.evidenceField}-help" class="evidence-help">JPG, PNG, WebP ou PDF · máximo 10 MB</small>
-      ${evidenceLabel ? `<div class="selected-file"><span class="file-mark">${evidenceLabel.mime_type === 'application/pdf' || evidenceLabel.type === 'application/pdf' ? 'PDF' : 'IMG'}</span><span><strong>${escapeHtml(evidenceLabel.original_name || evidenceLabel.name)}</strong><small>${file ? formatFileSize(file.size) : 'Comprovante salvo'}</small></span><button type="button" class="icon-button remove-file" data-action="remove-evidence" data-evidence-for="${item.field}" aria-label="Remover comprovante de ${item.title}">${icon('close', 18)}</button></div>` : ''}
+      ${evidenceLabel ? `<div class="selected-file"><span class="file-mark">${evidenceLabel.mime_type === 'application/pdf' || evidenceLabel.type === 'application/pdf' ? 'PDF' : 'IMG'}</span><span><strong>${escapeHtml(evidenceLabel.original_name || evidenceLabel.name)}</strong><small>${file ? formatFileSize(file.size) : 'Comprovante salvo'}</small></span><button type="button" class="icon-button remove-file" data-action="remove-semester-evidence" data-evidence-for="${item.field}" aria-label="Remover comprovante de ${item.title}">${icon('close', 18)}</button></div>` : ''}
       ${fieldError(item.evidenceField)}
     </div>` : ''}
   </div>`;
@@ -381,6 +393,10 @@ function renderAdminDashboard(content) {
     <section class="section-block">
       <div class="section-heading"><div><span class="eyebrow">Indicadores</span><h2>${isTotalPeriod() ? 'Médias por filial' : 'Métricas por filial'}</h2><p>Visão detalhada disponível somente para administradores.</p></div><button class="button button-secondary" data-action="export-latest">${icon('download', 18)} Exportar CSV</button></div>
       ${renderAdminLatestTable()}
+    </section>
+    <section class="section-block semester-development-section">
+      <div class="section-heading"><div><span class="eyebrow">Indicador semestral · Julho a Dezembro</span><h2>Desenvolvimento pessoal</h2><p>Vale até 5 pontos uma única vez no resultado Total; não é repetido nos meses.</p></div></div>
+      ${renderAdminSemesterDevelopmentTable()}
     </section>`;
 }
 
@@ -391,7 +407,15 @@ function renderAdminLatestTable() {
     const indicator = profitability
       ? `${formatPercentage(row.profitability_percentage)} <small>Rentabilidade</small>`
       : `${formatPercentage(row.discount_percentage)} <small>Desconto · Faixa ${row.discount_band}</small>`;
-    return `<tr><td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td><td data-label="OBZ">${formatPercentage(row.obz_percentage)}</td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)}</td><td data-label="${profitability ? 'Rentabilidade' : 'Desconto'}">${indicator}</td><td data-label="Desenvolvimento">${formatPoints(row.development_points)} / 5</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong><small>${isTotalPeriod() ? `${row.periods_count} meses` : ''}</small></td></tr>`;
+    return `<tr><td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td><td data-label="OBZ">${formatPercentage(row.obz_percentage)}</td><td data-label="Faturamento">${formatPercentage(row.revenue_percentage)}</td><td data-label="${profitability ? 'Rentabilidade' : 'Desconto'}">${indicator}</td><td data-label="Desenvolvimento semestral">${isTotalPeriod() ? `${formatPoints(row.development_points)} / 5` : 'Ver quadro semestral'}</td><td data-label="Total"><strong class="score-text">${formatPoints(row.total_points)} pts</strong><small>${isTotalPeriod() ? `${row.periods_count} meses` : '/ 95 pts'}</small></td></tr>`;
+  }).join('')}</tbody></table></div></div>`;
+}
+
+function renderAdminSemesterDevelopmentTable() {
+  if (!state.adminSemesterDevelopment.length) return renderEmpty('book', 'Nenhum desenvolvimento registrado', 'Os comprovantes semestrais aparecerão aqui após o primeiro envio.');
+  return `<div class="table-card"><div class="table-scroll"><table class="data-table"><thead><tr><th>Filial</th><th>Iniciativas</th><th>Pontos semestrais</th><th>Comprovantes</th><th>Atualizado em</th></tr></thead><tbody>${state.adminSemesterDevelopment.map((row) => {
+    const hasData = row.development_points !== null;
+    return `<tr><td data-label="Filial"><strong>${escapeHtml(row.branch_name)}</strong></td><td data-label="Iniciativas">${hasData ? `${row.initiatives} comprovadas` : 'Sem envio'}</td><td data-label="Pontos semestrais"><strong class="score-text">${hasData ? `${formatPoints(row.development_points)} / 5` : '—'}</strong></td><td data-label="Comprovantes">${row.evidence_count ? `<button type="button" class="button button-table" data-action="view-semester-evidence" data-development-id="${row.development_id}">${icon('eye', 16)} Ver ${row.evidence_count}</button>` : '<span class="muted-text">Nenhum</span>'}</td><td data-label="Atualizado em">${formatDate(row.updated_at)}</td></tr>`;
   }).join('')}</tbody></table></div></div>`;
 }
 
@@ -451,9 +475,15 @@ function renderConfirmModal() {
     root.innerHTML = '';
     return;
   }
+  if (state.modalOpen === 'semester-development') {
+    const score = calculateDevelopmentScore(state.semesterDevelopment);
+    root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel><button class="icon-button modal-close" data-action="close-modal" aria-label="Fechar">${icon('close', 20)}</button><div class="modal-icon">${icon('book', 25)}</div><h2 id="modal-title">Confirmar desenvolvimento semestral</h2><p>Esta pontuação é registrada uma única vez e será acrescentada integralmente ao resultado Total da filial.</p><div class="review-list"><span>Iniciativas comprovadas <strong>${score.initiatives}</strong></span><span class="review-total">Pontuação semestral <strong>${formatPoints(score.developmentPoints)} / 5</strong></span></div><div class="upload-progress" id="upload-progress" role="status"></div><div class="modal-actions"><button class="button button-secondary" data-action="close-modal">Voltar e revisar</button><button class="button button-primary" data-action="confirm-semester-development">Confirmar envio</button></div></section></div>`;
+    setTimeout(() => root.querySelector('[data-action="confirm-semester-development"]')?.focus(), 0);
+    return;
+  }
   const score = calculateScore(state.metrics);
   const indicatorLabel = state.metrics.metricKind === 'profitability' ? 'Rentabilidade' : 'Descontos';
-  root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel><button class="icon-button modal-close" data-action="close-modal" aria-label="Fechar">${icon('close', 20)}</button><div class="modal-icon">${icon('save', 25)}</div><h2 id="modal-title">Confirmar lançamento</h2><p>Revise a pontuação antes de registrar. Este envio e seus comprovantes ficarão preservados no histórico.</p><div class="review-list"><span>OBZ <strong>${formatPoints(score.obzPoints)} / 20</strong></span><span>Faturamento <strong>${formatPoints(score.revenuePoints)} / 40</strong></span><span>${indicatorLabel} <strong>${formatPoints(score.indicatorPoints)} / 35</strong></span><span>Desenvolvimento <strong>${formatPoints(score.developmentPoints)} / 5</strong></span><span>Comprovantes <strong>${score.initiatives} arquivo${score.initiatives === 1 ? '' : 's'}</strong></span><span class="review-total">Pontuação total <strong>${formatPoints(score.totalPoints)} / 100</strong></span></div><div class="upload-progress" id="upload-progress" role="status"></div><div class="modal-actions"><button class="button button-secondary" data-action="close-modal">Voltar e revisar</button><button class="button button-primary" data-action="confirm-submit">Confirmar envio</button></div></section></div>`;
+  root.innerHTML = `<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel><button class="icon-button modal-close" data-action="close-modal" aria-label="Fechar">${icon('close', 20)}</button><div class="modal-icon">${icon('save', 25)}</div><h2 id="modal-title">Confirmar lançamento mensal</h2><p>Revise a pontuação operacional antes de registrar. O Desenvolvimento Pessoal é preenchido em uma seção semestral separada.</p><div class="review-list"><span>OBZ <strong>${formatPoints(score.obzPoints)} / 20</strong></span><span>Faturamento <strong>${formatPoints(score.revenuePoints)} / 40</strong></span><span>${indicatorLabel} <strong>${formatPoints(score.indicatorPoints)} / 35</strong></span><span class="review-total">Pontuação do mês <strong>${formatPoints(score.totalPoints)} / 95</strong></span></div><div class="upload-progress" id="upload-progress" role="status"></div><div class="modal-actions"><button class="button button-secondary" data-action="close-modal">Voltar e revisar</button><button class="button button-primary" data-action="confirm-submit">Confirmar envio</button></div></section></div>`;
   setTimeout(() => root.querySelector('[data-action="confirm-submit"]')?.focus(), 0);
 }
 
@@ -477,11 +507,27 @@ async function loadDashboardData() {
   state.ranking = await appService.getRanking(period);
   if (state.profile.role === 'admin') {
     state.adminLatest = await appService.getAdminLatest(period);
+    state.adminSemesterDevelopment = await appService.getAdminSemesterDevelopment();
     return;
   }
   state.metrics = { ...emptyMetrics(), metricKind: isProfitabilityBranch() ? 'profitability' : 'discount', metricPeriod: state.selectedPeriod };
-  state.evidenceFiles = emptyEvidenceFiles();
-  state.existingEvidence = [];
+  state.semesterDevelopment = emptySemesterDevelopment();
+  state.semesterEvidenceFiles = emptyEvidenceFiles();
+  state.existingSemesterEvidence = [];
+  const semesterDevelopment = await appService.getSemesterDevelopment();
+  if (semesterDevelopment) {
+    state.semesterDevelopment = {
+      ...state.semesterDevelopment,
+      developmentBooks: semesterDevelopment.development_books,
+      developmentCourses: semesterDevelopment.development_courses,
+      developmentCertifications: semesterDevelopment.development_certifications,
+      developmentEvents: semesterDevelopment.development_events,
+    };
+    state.existingSemesterEvidence = semesterDevelopment.semester_development_evidence || [];
+    DEVELOPMENT_ITEMS.forEach((item) => {
+      state.semesterDevelopment[item.evidenceField] = state.existingSemesterEvidence.some((entry) => entry.category === item.category);
+    });
+  }
   if (!isTotalPeriod()) {
     const submission = await appService.getCurrentSubmission(state.selectedPeriod);
     if (submission) {
@@ -493,15 +539,7 @@ async function loadDashboardData() {
         discountBand: submission.discount_band || 'A',
         discountPercentage: submission.discount_percentage === null ? '' : toNumberInput(submission.discount_percentage),
         profitabilityPercentage: submission.profitability_percentage === null ? '' : toNumberInput(submission.profitability_percentage),
-        developmentBooks: submission.development_books,
-        developmentCourses: submission.development_courses,
-        developmentCertifications: submission.development_certifications,
-        developmentEvents: submission.development_events,
       };
-      state.existingEvidence = submission.submission_evidence || [];
-      DEVELOPMENT_ITEMS.forEach((item) => {
-        state.metrics[item.evidenceField] = state.existingEvidence.some((entry) => entry.category === item.category);
-      });
     }
   }
 }
@@ -514,8 +552,8 @@ async function loadHistoryData() {
 function updateMetricPreview() {
   const score = calculateScore(state.metrics);
   const set = (selector, html) => { const node = document.querySelector(selector); if (node) node.innerHTML = html; };
-  set('#form-total', `${formatPoints(score.totalPoints)} pts`);
-  set('#submit-total', `${formatPoints(score.totalPoints)} <small>/ 100 pts</small>`);
+  set('#form-total', `${formatPoints(score.totalPoints)} / 95 pts`);
+  set('#submit-total', `${formatPoints(score.totalPoints)} <small>/ 95 pts</small>`);
   set('#obz-score', scoreBadge(score.obzPoints, 20, Number(state.metrics.obzPercentage) >= 95 ? 'Elegível' : 'Abaixo do mínimo'));
   set('#revenue-score', scoreBadge(score.revenuePoints, 40, Number(state.metrics.revenuePercentage) >= 100 ? 'Meta atingida' : 'Em andamento'));
   const discountStatus = state.metrics.discountPercentage === ''
@@ -526,8 +564,14 @@ function updateMetricPreview() {
     ? state.metrics.profitabilityPercentage === '' ? 'Aguardando valor' : Number(state.metrics.profitabilityPercentage) >= 100 ? 'Meta atingida' : 'Em andamento'
     : discountStatus;
   set('#indicator-score', scoreBadge(score.indicatorPoints, 35, indicatorStatus));
-  set('#development-score', scoreBadge(score.developmentPoints, 5, `${score.initiatives} de 3 comprovadas`));
   if (!isProfitability) set('#discount-limit', `Teto atual: ${formatPercentage(DISCOUNT_LIMITS[state.metrics.discountBand])}`);
+}
+
+function updateSemesterPreview() {
+  const score = calculateDevelopmentScore(state.semesterDevelopment);
+  const set = (selector, html) => { const node = document.querySelector(selector); if (node) node.innerHTML = html; };
+  set('#semester-total', `${formatPoints(score.developmentPoints)} / 5 pts`);
+  set('#semester-initiatives', `${score.initiatives} <small>de 3 para a pontuação máxima</small>`);
 }
 
 function syncMetricState(target) {
@@ -541,21 +585,28 @@ function syncMetricState(target) {
   updateMetricPreview();
 }
 
-function handleEvidenceSelection(target) {
-  const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === target.dataset.evidenceFor);
+function handleSemesterEvidenceSelection(target) {
+  const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === target.dataset.semesterEvidenceFor);
   if (!item) return;
   const file = target.files?.[0] || null;
   const error = validateEvidenceFile(file);
   if (error) {
-    state.evidenceFiles[item.field] = null;
-    state.metrics[item.evidenceField] = false;
+    state.semesterEvidenceFiles[item.field] = null;
+    state.semesterDevelopment[item.evidenceField] = false;
     state.errors[item.evidenceField] = error;
   } else {
-    state.evidenceFiles[item.field] = file;
-    state.metrics[item.evidenceField] = true;
+    state.semesterEvidenceFiles[item.field] = file;
+    state.semesterDevelopment[item.evidenceField] = true;
     delete state.errors[item.evidenceField];
   }
   renderCurrentView();
+}
+
+function syncSemesterDevelopmentState(target) {
+  if (!target.name || !(target.name in state.semesterDevelopment)) return;
+  state.semesterDevelopment[target.name] = target.type === 'checkbox' ? target.checked : target.value;
+  if (state.errors[target.name]) delete state.errors[target.name];
+  updateSemesterPreview();
 }
 
 function validatePassword(password, confirmation) {
@@ -567,6 +618,7 @@ function validatePassword(password, confirmation) {
 
 document.addEventListener('input', (event) => {
   if (event.target.closest('#metrics-form')) syncMetricState(event.target);
+  if (event.target.closest('#semester-development-form')) syncSemesterDevelopmentState(event.target);
 });
 
 document.addEventListener('change', (event) => {
@@ -578,27 +630,31 @@ document.addEventListener('change', (event) => {
       .catch(() => showToast('Não foi possível carregar o período selecionado.', 'error'));
     return;
   }
-  if (event.target.matches('[data-evidence-for]')) {
-    handleEvidenceSelection(event.target);
+  if (event.target.matches('[data-semester-evidence-for]')) {
+    handleSemesterEvidenceSelection(event.target);
     return;
   }
-  if (event.target.closest('#metrics-form')) {
-    syncMetricState(event.target);
+  if (event.target.closest('#semester-development-form')) {
+    syncSemesterDevelopmentState(event.target);
     if (event.target.type === 'checkbox') {
       const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === event.target.name);
       if (item) {
         if (!event.target.checked) {
-          state.evidenceFiles[item.field] = null;
-          state.existingEvidence = state.existingEvidence.filter((entry) => entry.category !== item.category);
+          state.semesterEvidenceFiles[item.field] = null;
+          state.existingSemesterEvidence = state.existingSemesterEvidence.filter((entry) => entry.category !== item.category);
         }
-        state.metrics[item.evidenceField] = Boolean(event.target.checked && (
-          state.evidenceFiles[item.field]
-          || state.existingEvidence.some((entry) => entry.category === item.category)
+        state.semesterDevelopment[item.evidenceField] = Boolean(event.target.checked && (
+          state.semesterEvidenceFiles[item.field]
+          || state.existingSemesterEvidence.some((entry) => entry.category === item.category)
         ));
         if (!event.target.checked) delete state.errors[item.evidenceField];
         renderCurrentView();
       }
     }
+    return;
+  }
+  if (event.target.closest('#metrics-form')) {
+    syncMetricState(event.target);
   }
 });
 
@@ -630,12 +686,28 @@ document.addEventListener('submit', async (event) => {
         if (node) node.textContent = message;
       });
       const firstField = Object.keys(state.errors)[0];
-      const evidenceItem = DEVELOPMENT_ITEMS.find((item) => item.evidenceField === firstField);
-      document.querySelector(evidenceItem ? `#evidence-${evidenceItem.category}` : `#${firstField}`)?.focus();
+      document.querySelector(`#${firstField}`)?.focus();
       showToast('Revise os campos destacados antes de continuar.', 'error');
       return;
     }
     state.modalOpen = true;
+    renderConfirmModal();
+  }
+
+  if (event.target.id === 'semester-development-form') {
+    state.errors = validateSemesterDevelopment(state.semesterDevelopment);
+    if (Object.keys(state.errors).length) {
+      Object.entries(state.errors).forEach(([field, message]) => {
+        const node = document.querySelector(`#${field}-error`);
+        if (node) node.textContent = message;
+      });
+      const firstField = Object.keys(state.errors)[0];
+      const item = DEVELOPMENT_ITEMS.find((entry) => entry.evidenceField === firstField);
+      document.querySelector(item ? `#semester-evidence-${item.category}` : `#${firstField}`)?.focus();
+      showToast('Anexe os comprovantes das iniciativas selecionadas.', 'error');
+      return;
+    }
+    state.modalOpen = 'semester-development';
     renderConfirmModal();
   }
 
@@ -706,17 +778,18 @@ document.addEventListener('click', async (event) => {
     state.profile = null;
     state.view = 'dashboard';
     state.metrics = emptyMetrics();
-    state.evidenceFiles = emptyEvidenceFiles();
-    state.existingEvidence = [];
+    state.semesterDevelopment = emptySemesterDevelopment();
+    state.semesterEvidenceFiles = emptyEvidenceFiles();
+    state.existingSemesterEvidence = [];
     state.errors = {};
     renderLogin();
   }
-  if (action === 'remove-evidence') {
+  if (action === 'remove-semester-evidence') {
     const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === button.dataset.evidenceFor);
     if (item) {
-      state.evidenceFiles[item.field] = null;
-      state.existingEvidence = state.existingEvidence.filter((entry) => entry.category !== item.category);
-      state.metrics[item.evidenceField] = false;
+      state.semesterEvidenceFiles[item.field] = null;
+      state.existingSemesterEvidence = state.existingSemesterEvidence.filter((entry) => entry.category !== item.category);
+      state.semesterDevelopment[item.evidenceField] = false;
       state.errors[item.evidenceField] = 'Anexe um comprovante para esta iniciativa.';
       renderCurrentView();
     }
@@ -745,13 +818,26 @@ document.addEventListener('click', async (event) => {
     }
     renderConfirmModal();
   }
+  if (action === 'view-semester-evidence') {
+    state.modalOpen = false;
+    state.evidenceModal = { loading: true, error: '', items: [], developmentId: button.dataset.developmentId };
+    renderConfirmModal();
+    try {
+      state.evidenceModal.items = await appService.getSemesterEvidence(button.dataset.developmentId);
+      state.evidenceModal.loading = false;
+    } catch {
+      state.evidenceModal.loading = false;
+      state.evidenceModal.error = 'Tente novamente em alguns instantes.';
+    }
+    renderConfirmModal();
+  }
   if (action === 'confirm-submit') {
     state.submitting = true;
     button.disabled = true;
     button.textContent = 'Enviando...';
     document.querySelectorAll('#modal-root button').forEach((modalButton) => { modalButton.disabled = true; });
     try {
-      await appService.submitMetrics(state.metrics, state.evidenceFiles, state.existingEvidence, ({ completed, total, stage }) => {
+      await appService.submitMetrics(state.metrics, ({ completed, total, stage }) => {
         const progress = document.querySelector('#upload-progress');
         if (!progress) return;
         progress.classList.add('is-visible');
@@ -761,8 +847,6 @@ document.addEventListener('click', async (event) => {
       });
       state.modalOpen = false;
       state.metrics = emptyMetrics();
-      state.evidenceFiles = emptyEvidenceFiles();
-      state.existingEvidence = [];
       state.errors = {};
       await loadDashboardData();
       await loadHistoryData();
@@ -774,6 +858,35 @@ document.addEventListener('click', async (event) => {
       button.textContent = 'Confirmar envio';
       document.querySelectorAll('#modal-root button').forEach((modalButton) => { modalButton.disabled = false; });
       showToast('Não foi possível enviar os comprovantes. Seus valores continuam na tela.', 'error');
+    } finally {
+      state.submitting = false;
+    }
+  }
+  if (action === 'confirm-semester-development') {
+    state.submitting = true;
+    button.disabled = true;
+    button.textContent = 'Enviando...';
+    document.querySelectorAll('#modal-root button').forEach((modalButton) => { modalButton.disabled = true; });
+    try {
+      await appService.submitSemesterDevelopment(state.semesterDevelopment, state.semesterEvidenceFiles, state.existingSemesterEvidence, ({ completed, total, stage }) => {
+        const progress = document.querySelector('#upload-progress');
+        if (!progress) return;
+        progress.classList.add('is-visible');
+        progress.textContent = stage === 'saving'
+          ? total > 0 ? 'Comprovantes enviados. Salvando o indicador semestral...' : 'Salvando o indicador semestral...'
+          : `Enviando comprovantes: ${completed} de ${total}`;
+      });
+      state.modalOpen = false;
+      state.errors = {};
+      await loadDashboardData();
+      renderCurrentView();
+      renderConfirmModal();
+      showToast('Desenvolvimento semestral registrado com sucesso.');
+    } catch {
+      button.disabled = false;
+      button.textContent = 'Confirmar envio';
+      document.querySelectorAll('#modal-root button').forEach((modalButton) => { modalButton.disabled = false; });
+      showToast('Não foi possível salvar o desenvolvimento semestral. Seus dados continuam na tela.', 'error');
     } finally {
       state.submitting = false;
     }
