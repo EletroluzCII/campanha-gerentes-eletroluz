@@ -26,7 +26,7 @@ const app = document.querySelector('#app');
 const DEVELOPMENT_ITEMS = Object.freeze([
   { field: 'developmentBooks', evidenceField: 'developmentBooksEvidence', category: 'books', emoji: '📚', title: 'Livros', description: 'Foto do livro ou registro da leitura' },
   { field: 'developmentCourses', evidenceField: 'developmentCoursesEvidence', category: 'courses', emoji: '🎓', title: 'Cursos', description: 'Certificado, declaração ou registro do curso' },
-  { field: 'developmentCertifications', evidenceField: 'developmentCertificationsEvidence', category: 'certifications', emoji: '🏅', title: 'Certificações', description: 'Arquivo ou imagem da certificação' },
+  { field: 'developmentCertifications', evidenceField: 'developmentCertificationsEvidence', category: 'certifications', emoji: '🏅', title: 'Certificações profissionais', description: 'Certificação profissional obtida (não inclua cursos nesta opção)' },
   { field: 'developmentEvents', evidenceField: 'developmentEventsEvidence', category: 'events', emoji: '🎤', title: 'Eventos', description: 'Foto, ingresso ou comprovante de participação' },
 ]);
 
@@ -78,7 +78,7 @@ const emptySemesterDevelopment = () => ({
 });
 
 const emptyEvidenceFiles = () => Object.fromEntries(
-  DEVELOPMENT_ITEMS.map((item) => [item.field, null]),
+  DEVELOPMENT_ITEMS.map((item) => [item.field, []]),
 );
 
 const state = {
@@ -358,7 +358,7 @@ function renderSemesterDevelopment() {
   return `<section class="section-block semester-development-section">
     <div class="section-heading"><div><span class="eyebrow">Indicador semestral · Julho a Dezembro</span><h2>Desenvolvimento pessoal</h2><p>Esta pontuação é registrada uma única vez para todo o semestre e entra integralmente no resultado Total. Ela não se repete em cada mês.</p></div><div class="total-chip semester-chip"><span>Pontuação semestral</span><strong id="semester-total">${formatPoints(score.developmentPoints)} / 5 pts</strong></div></div>
     <form id="semester-development-form" novalidate>
-      <div class="semester-notice" role="status">${icon('history', 20)}<span>Complete até três iniciativas comprovadas. Você pode revisar este mesmo registro durante o semestre.</span></div>
+      <div class="semester-notice" role="status">${icon('history', 20)}<span>Complete até três iniciativas comprovadas. Você pode anexar vários comprovantes por iniciativa; eles não alteram a pontuação. Você pode revisar este mesmo registro durante o semestre.</span></div>
       <fieldset class="check-grid"><legend class="sr-only">Iniciativas semestrais concluídas</legend>${DEVELOPMENT_ITEMS.map(semesterDevelopmentCheck).join('')}</fieldset>
       <div class="form-submit-bar"><div><span>Iniciativas comprovadas</span><strong id="semester-initiatives">${score.initiatives} <small>de 3 para a pontuação máxima</small></strong></div><button class="button button-primary" type="submit">${icon('save', 18)} ${state.existingSemesterEvidence.length ? 'Revisar e atualizar' : 'Salvar desenvolvimento semestral'}</button></div>
     </form>
@@ -367,19 +367,25 @@ function renderSemesterDevelopment() {
 
 function semesterDevelopmentCheck(item) {
   const selected = state.semesterDevelopment[item.field];
-  const file = state.semesterEvidenceFiles[item.field];
-  const existingFile = state.existingSemesterEvidence.find((entry) => entry.category === item.category);
-  const evidenceLabel = file || existingFile;
+  const files = state.semesterEvidenceFiles[item.field];
+  const existingFiles = state.existingSemesterEvidence.filter((entry) => entry.category === item.category);
+  const evidenceItems = [
+    ...existingFiles.map((file, index) => ({ file, source: 'saved', index })),
+    ...files.map((file, index) => ({ file, source: 'new', index })),
+  ];
   const inputId = `semester-evidence-${item.category}`;
   const accept = EVIDENCE_RULES.acceptedTypes.join(',');
-  return `<div class="development-option ${selected ? 'is-selected' : ''} ${evidenceLabel ? 'has-file' : ''}">
+  const evidenceStatus = evidenceItems.length
+    ? `${evidenceItems.length} ${evidenceItems.length === 1 ? 'comprovante anexado' : 'comprovantes anexados'}`
+    : 'Ainda não anexado';
+  return `<div class="development-option ${selected ? 'is-selected' : ''} ${evidenceItems.length ? 'has-file' : ''}">
     <label class="check-option"><input type="checkbox" name="${item.field}" ${selected ? 'checked' : ''} /><span class="custom-check">${icon('check', 15)}</span><span><strong><span class="development-emoji" aria-hidden="true">${item.emoji}</span> ${item.title}</strong><small>${item.description}</small></span></label>
     ${selected ? `<div class="evidence-upload">
-      <div class="evidence-heading"><span>Comprovante obrigatório</span><small>${file ? 'Arquivo pronto para envio' : existingFile ? 'Comprovante já salvo' : 'Ainda não anexado'}</small></div>
-      <input class="evidence-input" type="file" id="${inputId}" data-semester-evidence-for="${item.field}" accept="${accept}" aria-describedby="${item.evidenceField}-help ${item.evidenceField}-error" />
-      <label class="evidence-picker" for="${inputId}">${icon('download', 17)} ${evidenceLabel ? 'Substituir arquivo' : 'Selecionar arquivo'}</label>
-      <small id="${item.evidenceField}-help" class="evidence-help">JPG, PNG, WebP ou PDF · máximo 10 MB</small>
-      ${evidenceLabel ? `<div class="selected-file"><span class="file-mark">${evidenceLabel.mime_type === 'application/pdf' || evidenceLabel.type === 'application/pdf' ? 'PDF' : 'IMG'}</span><span><strong>${escapeHtml(evidenceLabel.original_name || evidenceLabel.name)}</strong><small>${file ? formatFileSize(file.size) : 'Comprovante salvo'}</small></span><button type="button" class="icon-button remove-file" data-action="remove-semester-evidence" data-evidence-for="${item.field}" aria-label="Remover comprovante de ${item.title}">${icon('close', 18)}</button></div>` : ''}
+      <div class="evidence-heading"><span>Comprovantes obrigatórios</span><small>${evidenceStatus}</small></div>
+      <input class="evidence-input" type="file" id="${inputId}" data-semester-evidence-for="${item.field}" accept="${accept}" multiple aria-describedby="${item.evidenceField}-help ${item.evidenceField}-error" />
+      <label class="evidence-picker" for="${inputId}">${icon('download', 17)} ${evidenceItems.length ? 'Adicionar arquivos' : 'Selecionar arquivos'}</label>
+      <small id="${item.evidenceField}-help" class="evidence-help">JPG, PNG, WebP ou PDF · máximo 10 MB por arquivo · você pode anexar quantos comprovantes precisar</small>
+      ${evidenceItems.length ? `<div class="selected-files">${evidenceItems.map(({ file, source, index }) => `<div class="selected-file"><span class="file-mark">${file.mime_type === 'application/pdf' || file.type === 'application/pdf' ? 'PDF' : 'IMG'}</span><span><strong>${escapeHtml(file.original_name || file.name)}</strong><small>${source === 'new' ? `Pronto para envio · ${formatFileSize(file.size)}` : 'Comprovante salvo'}</small></span><button type="button" class="icon-button remove-file" data-action="remove-semester-evidence" data-evidence-for="${item.field}" data-evidence-source="${source}" data-evidence-index="${index}" aria-label="Remover comprovante de ${item.title}">${icon('close', 18)}</button></div>`).join('')}</div>` : ''}
       ${fieldError(item.evidenceField)}
     </div>` : ''}
   </div>`;
@@ -620,17 +626,17 @@ function syncMetricState(target) {
 function handleSemesterEvidenceSelection(target) {
   const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === target.dataset.semesterEvidenceFor);
   if (!item) return;
-  const file = target.files?.[0] || null;
-  const error = validateEvidenceFile(file);
-  if (error) {
-    state.semesterEvidenceFiles[item.field] = null;
-    state.semesterDevelopment[item.evidenceField] = false;
-    state.errors[item.evidenceField] = error;
-  } else {
-    state.semesterEvidenceFiles[item.field] = file;
-    state.semesterDevelopment[item.evidenceField] = true;
+  const files = Array.from(target.files || []);
+  const invalidFile = files.find((file) => validateEvidenceFile(file));
+  if (invalidFile) state.errors[item.evidenceField] = validateEvidenceFile(invalidFile);
+  else if (files.length) {
+    state.semesterEvidenceFiles[item.field].push(...files);
     delete state.errors[item.evidenceField];
   }
+  state.semesterDevelopment[item.evidenceField] = Boolean(
+    state.semesterEvidenceFiles[item.field].length
+    || state.existingSemesterEvidence.some((entry) => entry.category === item.category),
+  );
   renderCurrentView();
 }
 
@@ -672,11 +678,11 @@ document.addEventListener('change', (event) => {
       const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === event.target.name);
       if (item) {
         if (!event.target.checked) {
-          state.semesterEvidenceFiles[item.field] = null;
+          state.semesterEvidenceFiles[item.field] = [];
           state.existingSemesterEvidence = state.existingSemesterEvidence.filter((entry) => entry.category !== item.category);
         }
         state.semesterDevelopment[item.evidenceField] = Boolean(event.target.checked && (
-          state.semesterEvidenceFiles[item.field]
+          state.semesterEvidenceFiles[item.field].length
           || state.existingSemesterEvidence.some((entry) => entry.category === item.category)
         ));
         if (!event.target.checked) delete state.errors[item.evidenceField];
@@ -819,10 +825,19 @@ document.addEventListener('click', async (event) => {
   if (action === 'remove-semester-evidence') {
     const item = DEVELOPMENT_ITEMS.find((entry) => entry.field === button.dataset.evidenceFor);
     if (item) {
-      state.semesterEvidenceFiles[item.field] = null;
-      state.existingSemesterEvidence = state.existingSemesterEvidence.filter((entry) => entry.category !== item.category);
-      state.semesterDevelopment[item.evidenceField] = false;
-      state.errors[item.evidenceField] = 'Anexe um comprovante para esta iniciativa.';
+      const index = Number(button.dataset.evidenceIndex);
+      if (button.dataset.evidenceSource === 'new') state.semesterEvidenceFiles[item.field].splice(index, 1);
+      else {
+        const existingFiles = state.existingSemesterEvidence.filter((entry) => entry.category === item.category);
+        const fileToRemove = existingFiles[index];
+        state.existingSemesterEvidence = state.existingSemesterEvidence.filter((entry) => entry !== fileToRemove);
+      }
+      state.semesterDevelopment[item.evidenceField] = Boolean(
+        state.semesterEvidenceFiles[item.field].length
+        || state.existingSemesterEvidence.some((entry) => entry.category === item.category),
+      );
+      if (state.semesterDevelopment[item.evidenceField]) delete state.errors[item.evidenceField];
+      else state.errors[item.evidenceField] = 'Anexe ao menos um comprovante para esta iniciativa.';
       renderCurrentView();
     }
   }

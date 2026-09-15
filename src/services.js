@@ -278,15 +278,17 @@ export const appService = {
     }
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData.user) throw userError || new Error('Sessão expirada.');
-    const selectedEvidence = evidenceFields
-      .filter(([, field]) => values[field] && evidenceFiles[field])
-      .map(([category, field]) => ({ category, file: evidenceFiles[field] }));
+    const selectedEvidence = evidenceFields.flatMap(([category, field]) => (
+      values[field]
+        ? (evidenceFiles[field] || []).map((file) => ({ category, file }))
+        : []
+    ));
     const batchId = crypto.randomUUID();
     const uploadedPaths = [];
     const evidencePayload = existingEvidence
       .filter((item) => {
         const mapped = evidenceFields.find(([category]) => category === item.category);
-        return mapped && values[mapped[1]] && !selectedEvidence.some(({ category }) => category === item.category);
+        return mapped && values[mapped[1]];
       })
       .map((item) => ({ category: item.category, storage_path: item.storage_path, original_name: item.original_name, mime_type: item.mime_type, size_bytes: item.size_bytes }));
     try {

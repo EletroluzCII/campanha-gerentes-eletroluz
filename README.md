@@ -108,7 +108,7 @@ public/
 - OBZ: 20 pontos, elegibilidade mínima de 95% e limite em 100%.
 - Faturamento: 40 pontos proporcionais, limitados em 100%.
 - Descontos: 35 pontos quando o percentual está dentro do teto da faixa.
-- Desenvolvimento pessoal: 5 pontos proporcionais até três iniciativas comprovadas. Marcar uma atividade sem anexar o arquivo não concede pontos.
+- Desenvolvimento pessoal: 5 pontos proporcionais até três iniciativas comprovadas. Cada categoria pode receber vários comprovantes, mas conta somente uma vez na pontuação. Marcar uma atividade sem anexar ao menos um arquivo não concede pontos.
 
 O navegador mostra a prévia, mas a função `submit_metrics` recalcula tudo no PostgreSQL. Valores enviados manualmente pelo navegador não conseguem definir a própria pontuação.
 
