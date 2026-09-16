@@ -18,10 +18,8 @@ const base = {
   developmentBooksEvidence: true,
   developmentCourses: true,
   developmentCoursesEvidence: true,
-  developmentCertifications: true,
-  developmentCertificationsEvidence: true,
-  developmentEvents: false,
-  developmentEventsEvidence: false,
+  developmentEvents: true,
+  developmentEventsEvidence: true,
 };
 
 test('calcula a pontuação operacional máxima em 95 pontos', () => {
@@ -88,9 +86,10 @@ test('rentabilidade não exige os campos de desconto', () => {
   assert.equal(errors.discount501To2000Percentage, undefined);
 });
 
-test('desenvolvimento pontua proporcionalmente e limita em três iniciativas', () => {
-  assert.equal(calculateDevelopmentScore({ ...base, developmentCourses: false, developmentCertifications: false }).developmentPoints, 1.67);
-  assert.equal(calculateDevelopmentScore({ ...base, developmentEvents: true, developmentEventsEvidence: true }).developmentPoints, 5);
+test('desenvolvimento redistribui os 5 pontos entre três iniciativas', () => {
+  assert.equal(calculateDevelopmentScore({ ...base, developmentCourses: false, developmentEvents: false }).developmentPoints, 1.67);
+  assert.equal(calculateDevelopmentScore({ ...base, developmentEvents: false }).developmentPoints, 3.33);
+  assert.equal(calculateDevelopmentScore(base).developmentPoints, 5);
 });
 
 test('iniciativa selecionada sem comprovante não pontua', () => {
@@ -98,7 +97,7 @@ test('iniciativa selecionada sem comprovante não pontua', () => {
     ...base,
     developmentBooksEvidence: false,
     developmentCoursesEvidence: false,
-    developmentCertificationsEvidence: false,
+    developmentEventsEvidence: false,
   });
   assert.equal(score.developmentPoints, 0);
   assert.equal(score.initiatives, 0);

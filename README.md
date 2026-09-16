@@ -8,7 +8,7 @@ Sistema web para registrar os indicadores das 12 filiais, calcular a pontuação
 - Quatro indicadores com cálculo imediato e validação no banco.
 - Ranking compartilhado com destaque da filial conectada.
 - Histórico imutável de todos os lançamentos.
-- Comprovantes privados para livros, cursos, certificações e eventos.
+- Comprovantes privados para livros, cursos e eventos.
 - Painel administrativo com métricas detalhadas, filtros e exportação CSV.
 - Alteração da própria senha.
 - Layout responsivo e acessível.

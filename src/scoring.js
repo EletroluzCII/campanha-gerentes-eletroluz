@@ -76,7 +76,6 @@ export function calculateDevelopmentScore(values) {
   const initiatives = [
     values.developmentBooks && values.developmentBooksEvidence,
     values.developmentCourses && values.developmentCoursesEvidence,
-    values.developmentCertifications && values.developmentCertificationsEvidence,
     values.developmentEvents && values.developmentEventsEvidence,
   ].filter(Boolean).length;
   return {
@@ -120,7 +119,6 @@ export function validateSemesterDevelopment(values) {
   [
     ['developmentBooks', 'developmentBooksEvidence', 'Anexe um comprovante do livro.'],
     ['developmentCourses', 'developmentCoursesEvidence', 'Anexe um comprovante do curso.'],
-    ['developmentCertifications', 'developmentCertificationsEvidence', 'Anexe a certificação.'],
     ['developmentEvents', 'developmentEventsEvidence', 'Anexe um comprovante do evento.'],
   ].forEach(([selectedField, evidenceField, message]) => {
     if (values[selectedField] && !values[evidenceField]) errors[evidenceField] = message;

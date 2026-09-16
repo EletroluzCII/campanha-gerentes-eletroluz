@@ -21,7 +21,6 @@ const flattenSubmission = (row) => ({
 const evidenceFields = [
   ['books', 'developmentBooks'],
   ['courses', 'developmentCourses'],
-  ['certifications', 'developmentCertifications'],
   ['events', 'developmentEvents'],
 ];
 
@@ -268,7 +267,7 @@ export const appService = {
         ...demoSemesterDevelopment,
         development_books: Boolean(values.developmentBooks),
         development_courses: Boolean(values.developmentCourses),
-        development_certifications: Boolean(values.developmentCertifications),
+        development_certifications: false,
         development_events: Boolean(values.developmentEvents),
         development_points: score.developmentPoints,
         updated_at: new Date().toISOString(),
@@ -306,7 +305,7 @@ export const appService = {
       return assertNoError(await supabase.rpc('submit_semester_development', {
         p_development_books: Boolean(values.developmentBooks),
         p_development_courses: Boolean(values.developmentCourses),
-        p_development_certifications: Boolean(values.developmentCertifications),
+        p_development_certifications: false,
         p_development_events: Boolean(values.developmentEvents),
         p_evidence: evidencePayload,
       }));

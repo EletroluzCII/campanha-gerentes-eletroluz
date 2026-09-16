@@ -26,7 +26,6 @@ const app = document.querySelector('#app');
 const DEVELOPMENT_ITEMS = Object.freeze([
   { field: 'developmentBooks', evidenceField: 'developmentBooksEvidence', category: 'books', emoji: '📚', title: 'Livros', description: 'Foto do livro ou registro da leitura' },
   { field: 'developmentCourses', evidenceField: 'developmentCoursesEvidence', category: 'courses', emoji: '🎓', title: 'Cursos', description: 'Certificado, declaração ou registro do curso' },
-  { field: 'developmentCertifications', evidenceField: 'developmentCertificationsEvidence', category: 'certifications', emoji: '🏅', title: 'Certificações profissionais', description: 'Certificação profissional obtida (não inclua cursos nesta opção)' },
   { field: 'developmentEvents', evidenceField: 'developmentEventsEvidence', category: 'events', emoji: '🎤', title: 'Eventos', description: 'Foto, ingresso ou comprovante de participação' },
 ]);
 
@@ -71,8 +70,6 @@ const emptySemesterDevelopment = () => ({
   developmentBooksEvidence: false,
   developmentCourses: false,
   developmentCoursesEvidence: false,
-  developmentCertifications: false,
-  developmentCertificationsEvidence: false,
   developmentEvents: false,
   developmentEventsEvidence: false,
 });
@@ -557,7 +554,6 @@ async function loadDashboardData() {
       ...state.semesterDevelopment,
       developmentBooks: semesterDevelopment.development_books,
       developmentCourses: semesterDevelopment.development_courses,
-      developmentCertifications: semesterDevelopment.development_certifications,
       developmentEvents: semesterDevelopment.development_events,
     };
     state.existingSemesterEvidence = semesterDevelopment.semester_development_evidence || [];
